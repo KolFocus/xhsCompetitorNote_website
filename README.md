@@ -1,0 +1,2 @@
+# xhsCompetitorNote_website
+基于千瓜数据平台，监控小红书上竞品商业笔记
