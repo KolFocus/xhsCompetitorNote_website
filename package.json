@@ -1,0 +1,30 @@
+{
+  "name": "xhs-competitor-note-website",
+  "version": "1.0.0",
+  "description": "小红书竞品笔记监控系统",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "@supabase/ssr": "^0.1.0",
+    "antd": "^5.12.8",
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "@ant-design/icons": "^5.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "typescript": "^5.3.3",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.1.0"
+  }
+}
+
