@@ -1,0 +1,185 @@
+/**
+ * 获取报告笔记列表接口
+ * GET /api/reports/[id]/notes
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@/lib/supabase/server';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createServerClient();
+    
+    // 获取当前用户
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const reportId = params.id;
+
+    // 验证报告存在且属于当前用户
+    const { data: report } = await supabase
+      .from('reports')
+      .select('ReportId')
+      .eq('ReportId', reportId)
+      .eq('UserId', user.id)
+      .single();
+
+    if (!report) {
+      return NextResponse.json(
+        { success: false, error: '报告不存在或无权访问' },
+        { status: 404 }
+      );
+    }
+
+    // 获取查询参数
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
+    const status = searchParams.get('status') || 'active';
+    const brandId = searchParams.get('brandId');
+    const bloggerId = searchParams.get('bloggerId');
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const search = searchParams.get('search');
+    const orderBy = searchParams.get('orderBy') || 'PublishTime';
+    const order = searchParams.get('order') || 'desc';
+
+    // 验证分页参数
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid pagination parameters' },
+        { status: 400 }
+      );
+    }
+
+    // 构建查询 - 从 report_notes 开始，关联 qiangua_note_info
+    let query = supabase
+      .from('report_notes')
+      .select(`
+        NoteId,
+        Status,
+        CreatedAt,
+        qiangua_note_info (
+          NoteId,
+          Title,
+          CoverImage,
+          NoteType,
+          IsBusiness,
+          IsAdNote,
+          PublishTime,
+          LikedCount,
+          CollectedCount,
+          CommentsCount,
+          ViewCount,
+          ShareCount,
+          BloggerId,
+          BloggerNickName,
+          SmallAvatar,
+          BrandId,
+          BrandName,
+          VideoDuration
+        )
+      `, { count: 'exact' })
+      .eq('ReportId', reportId)
+      .eq('Status', status);
+
+    // 应用过滤条件（通过子查询）
+    // 注意：Supabase 的过滤需要在子查询中处理，这里简化处理
+    // 实际应用中可能需要先查询符合条件的 NoteId，再过滤
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    query = query.range(from, to);
+
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Error fetching report notes:', error);
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    // 处理数据格式
+    const notes = (data || [])
+      .map((item: any) => {
+        const note = item.qiangua_note_info;
+        if (!note) return null;
+
+        // 应用筛选（在内存中，因为 Supabase 子查询限制）
+        if (brandId && note.BrandId !== brandId) return null;
+        if (bloggerId && note.BloggerId !== bloggerId) return null;
+        if (startDate && note.PubDate < startDate) return null;
+        if (endDate && note.PubDate > endDate) return null;
+        if (search) {
+          const searchLower = search.toLowerCase();
+          if (
+            !note.Title?.toLowerCase().includes(searchLower) &&
+            !note.BrandName?.toLowerCase().includes(searchLower)
+          ) {
+            return null;
+          }
+        }
+
+        return {
+          noteId: note.NoteId,
+          title: note.Title,
+          coverImage: note.CoverImage,
+          noteType: note.NoteType,
+          isBusiness: note.IsBusiness,
+          isAdNote: note.IsAdNote,
+          publishTime: note.PublishTime,
+          likedCount: note.LikedCount,
+          collectedCount: note.CollectedCount,
+          commentsCount: note.CommentsCount,
+          viewCount: note.ViewCount,
+          shareCount: note.ShareCount,
+          bloggerId: note.BloggerId,
+          bloggerNickName: note.BloggerNickName,
+          bloggerSmallAvatar: note.SmallAvatar,
+          brandId: note.BrandId,
+          brandName: note.BrandName,
+          videoDuration: note.VideoDuration,
+          status: item.Status,
+          addedAt: item.CreatedAt,
+        };
+      })
+      .filter((note: any) => note !== null);
+
+    // 应用排序
+    notes.sort((a: any, b: any) => {
+      const aVal = a[orderBy.toLowerCase()] || 0;
+      const bVal = b[orderBy.toLowerCase()] || 0;
+      return order === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+
+    // 重新分页（因为筛选在内存中进行）
+    const paginatedNotes = notes.slice(from, to);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        list: paginatedNotes,
+        total: notes.length, // 注意：这是筛选后的总数，不是数据库总数
+        page,
+        pageSize,
+      },
+    });
+  } catch (error: any) {
+    console.error('Error in get report notes API:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
