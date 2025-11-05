@@ -19,6 +19,8 @@ import {
   Tag,
   Image,
   Avatar,
+  Tooltip,
+  Statistic,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -28,10 +30,15 @@ import {
   EyeOutlined,
   CommentOutlined,
   ShareAltOutlined,
+  FileTextOutlined,
+  TagsOutlined,
+  BarChartOutlined,
+  UserOutlined,
+  FileExclamationOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
 
 dayjs.locale('zh-cn');
@@ -67,6 +74,7 @@ const getProxiedImageUrl = (url: string | null | undefined): string | undefined 
 interface Note {
   NoteId: string;
   Title: string;
+  Content: string | null;
   CoverImage: string | null;
   NoteType: string;
   IsBusiness: boolean;
@@ -84,7 +92,9 @@ interface Note {
   BigAvatar: string | null;
   SmallAvatar: string | null;
   BrandId: string | null;
+  BrandIdKey: string | null;
   BrandName: string | null;
+  VideoDuration: string | null;
   CurrentUserIsFavorite: boolean;
 }
 
@@ -113,6 +123,31 @@ export default function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [bloggers, setBloggers] = useState<Blogger[]>([]);
+  
+  // 自定义滚动条样式
+  React.useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .tooltip-scrollable::-webkit-scrollbar {
+        width: 6px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -122,6 +157,18 @@ export default function NotesPage() {
   const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
   const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+
+  // 排序状态（默认：PublishTime 降序）
+  const [sortField, setSortField] = useState<string>('PublishTime');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  // 统计数据
+  const [stats, setStats] = useState<{
+    totalNotes: number;
+    totalBrands: number;
+    totalBloggers: number;
+    missingContent: number;
+  } | null>(null);
 
   // 加载品牌和博主列表
   useEffect(() => {
@@ -149,6 +196,35 @@ export default function NotesPage() {
     loadFilters();
   }, []);
 
+  // 加载统计数据
+  const loadStats = async () => {
+    try {
+      const params = new URLSearchParams();
+
+      if (selectedBrand) {
+        params.append('brandId', selectedBrand);
+      }
+      if (selectedBlogger) {
+        params.append('bloggerId', selectedBlogger);
+      }
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        params.append('startDate', dateRange[0].format('YYYY-MM-DD'));
+        params.append('endDate', dateRange[1].format('YYYY-MM-DD'));
+      }
+
+      const response = await fetch(`/api/notes/stats?${params.toString()}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setStats(data.data);
+      } else {
+        console.error('Failed to load stats:', data.error);
+      }
+    } catch (error) {
+      console.error('Error loading stats:', error);
+    }
+  };
+
   // 加载笔记列表
   const loadNotes = async (currentPage: number = page) => {
     setLoading(true);
@@ -167,6 +243,12 @@ export default function NotesPage() {
       if (dateRange && dateRange[0] && dateRange[1]) {
         params.append('startDate', dateRange[0].format('YYYY-MM-DD'));
         params.append('endDate', dateRange[1].format('YYYY-MM-DD'));
+      }
+
+      // 添加排序参数
+      if (sortField) {
+        params.append('orderBy', sortField);
+        params.append('order', sortOrder);
       }
 
       const response = await fetch(`/api/notes?${params.toString()}`);
@@ -188,9 +270,47 @@ export default function NotesPage() {
 
   // 初始加载
   useEffect(() => {
+    // 当过滤条件变化时，先重置统计数据为 null
+    setStats(null);
     loadNotes(1);
+    loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedBrand, selectedBlogger, dateRange, pageSize]);
+  }, [selectedBrand, selectedBlogger, dateRange, pageSize, sortField, sortOrder]);
+
+  // 处理列头点击排序
+  const handleSortClick = (field: string, e?: React.MouseEvent) => {
+    // 阻止默认行为和事件冒泡，避免触发 Ant Design 的默认排序处理
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (sortField === field) {
+      // 如果点击的是当前排序字段，切换排序方向
+      setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+    } else {
+      // 如果切换到其他字段，从升序开始
+      setSortField(field);
+      setSortOrder('asc');
+    }
+    setPage(1); // 排序变化时重置到第一页
+  };
+
+  // 处理表格排序变化（保留用于兼容性）
+  const handleTableChange: TableProps<Note>['onChange'] = (
+    pagination,
+    filters,
+    sorter,
+    extra
+  ) => {
+    if (extra.action === 'sort' && sorter) {
+      const order = Array.isArray(sorter) ? sorter[0] : sorter;
+      if (order.field) {
+        const field = order.field as string;
+        handleSortClick(field);
+      }
+    }
+  };
 
   // 重置过滤条件
   const handleReset = () => {
@@ -198,6 +318,7 @@ export default function NotesPage() {
     setSelectedBlogger(undefined);
     setDateRange(null);
     setPage(1);
+    // 注意：不清除排序状态
   };
 
   // 格式化数字
@@ -217,8 +338,8 @@ export default function NotesPage() {
       width: 100,
       render: (image: string | null, record: Note) => (
         <div style={{ 
-          width: 80, 
-          height: 60, 
+          width: 60,
+          height: 80,
           position: 'relative',
           overflow: 'hidden',
           borderRadius: 4,
@@ -260,15 +381,36 @@ export default function NotesPage() {
       key: 'Title',
       width: 300,
       ellipsis: true,
-      render: (text: string, record: Note) => (
+      render: (text: string, record: Note) => {
+        const content = record.Content?.trim() || '';
+        const tooltipContent = content ? (
+          <div 
+            className="tooltip-scrollable"
+            style={{ 
+              maxWidth: 400, 
+              maxHeight: 300, 
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap', 
+              wordBreak: 'break-word' 
+            }}
+          >
+            {content}
+          </div>
+        ) : (
+          '未采集'
+        );
+
+        return (
         <div>
+              <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
           <div style={{ marginBottom: 8, fontWeight: 500 }}>
             {text || '无标题'}
           </div>
+              </Tooltip>
           <Space size="small" wrap>
             {record.NoteType === 'video' ? (
               <Tag color="blue" icon={<VideoCameraOutlined />}>
-                视频
+                    {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
               </Tag>
             ) : (
               <Tag color="green" icon={<PictureOutlined />}>
@@ -279,7 +421,9 @@ export default function NotesPage() {
             {record.IsBusiness && <Tag color="orange">商业</Tag>}
           </Space>
         </div>
-      ),
+          
+        );
+      },
     },
     {
       title: '博主',
@@ -304,19 +448,34 @@ export default function NotesPage() {
       dataIndex: 'BrandName',
       key: 'BrandName',
       width: 120,
-      render: (brandName: string | null) =>
-        brandName ? (
-          <Tag color="blue">{brandName}</Tag>
-        ) : (
-          <span style={{ color: '#999' }}>-</span>
-        ),
+      render: (brandName: string | null, record: Note) => {
+        if (!brandName || !record.BrandId || !record.BrandIdKey) {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        const qianGuaUrl = `https://app.qian-gua.com/#/brand/detail/${record.BrandId}/${record.BrandIdKey}`;
+        return (
+          <Tag
+            color="blue"
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(qianGuaUrl, '_blank');
+            }}
+          >
+            {brandName}
+          </Tag>
+        );
+      },
     },
     {
-      title: '发布时间',
-      dataIndex: 'PublishTime',
-      key: 'PublishTime',
-      width: 160,
-      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
+      title: '互动',
+      key: 'Interaction',
+      width: 100,
+      align: 'right',
+      render: (_: any, record: Note) => {
+        const total = record.LikedCount + record.ViewCount + record.CommentsCount + record.ShareCount;
+        return formatNumber(total);
+      },
     },
     {
       title: '点赞',
@@ -324,6 +483,11 @@ export default function NotesPage() {
       key: 'LikedCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'LikedCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('LikedCount', e),
+      }),
       render: (count: number) => (
         <Space size="small">
           <LikeOutlined />
@@ -337,6 +501,11 @@ export default function NotesPage() {
       key: 'ViewCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'ViewCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('ViewCount', e),
+      }),
       render: (count: number) => (
         <Space size="small">
           <EyeOutlined />
@@ -350,6 +519,11 @@ export default function NotesPage() {
       key: 'CommentsCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'CommentsCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('CommentsCount', e),
+      }),
       render: (count: number) => (
         <Space size="small">
           <CommentOutlined />
@@ -363,12 +537,30 @@ export default function NotesPage() {
       key: 'ShareCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'ShareCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('ShareCount', e),
+      }),
       render: (count: number) => (
         <Space size="small">
           <ShareAltOutlined />
           {formatNumber(count)}
         </Space>
       ),
+    },
+    {
+      title: '发布时间',
+      dataIndex: 'PublishTime',
+      key: 'PublishTime',
+      width: 160,
+      sorter: true,
+      defaultSortOrder: 'descend',
+      sortOrder: sortField === 'PublishTime' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('PublishTime', e),
+      }),
+      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
     },
   ];
 
@@ -451,12 +643,58 @@ export default function NotesPage() {
         </Row>
       </Card>
 
+      {/* 关键数据统计 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="笔记总数"
+              value={stats?.totalNotes ?? '-'}
+              prefix={<FileTextOutlined />}
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="品牌数量"
+              value={stats?.totalBrands ?? '-'}
+              prefix={<TagsOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="达人数量"
+              value={stats?.totalBloggers ?? '-'}
+              prefix={<UserOutlined />}
+              valueStyle={{ color: '#faad14' }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic
+              title="缺失内容"
+              value={stats?.missingContent ?? '-'}
+              prefix={<FileExclamationOutlined />}
+              valueStyle={{ color: '#ff4d4f' }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
       {/* 笔记列表 */}
       <Table
         columns={columns}
         dataSource={notes}
         rowKey="NoteId"
         loading={loading}
+        onChange={handleTableChange}
+        showSorterTooltip={false}
         pagination={{
           current: page,
           pageSize: pageSize,

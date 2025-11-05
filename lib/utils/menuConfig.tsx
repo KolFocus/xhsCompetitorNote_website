@@ -3,101 +3,30 @@
  * 定义侧边栏菜单结构和路由映射
  */
 import {
-  HomeOutlined,
   FileTextOutlined,
-  StarOutlined,
   TagsOutlined,
-  PlusOutlined,
   BarChartOutlined,
-  DashboardOutlined,
-  LineChartOutlined,
-  SettingOutlined,
-  UserOutlined,
 } from '@ant-design/icons';
 import { MenuItem } from '../types';
 
 export const menuItems: MenuItem[] = [
   {
-    key: 'dashboard',
-    label: '首页',
-    icon: <HomeOutlined />,
-    path: '/dashboard',
-  },
-  {
-    key: 'notes',
-    label: '笔记管理',
+    key: 'notes-all',
+    label: '全部笔记',
     icon: <FileTextOutlined />,
-    children: [
-      {
-        key: 'notes-all',
-        label: '全部笔记',
-        icon: <FileTextOutlined />,
-        path: '/dashboard/notes',
-      },
-      {
-        key: 'notes-favorites',
-        label: '我的收藏',
-        icon: <StarOutlined />,
-        path: '/dashboard/notes/favorites',
-      },
-    ],
+    path: '/dashboard/notes',
   },
   {
-    key: 'brands',
-    label: '品牌管理',
+    key: 'brands-list',
+    label: '品牌列表',
     icon: <TagsOutlined />,
-    children: [
-      {
-        key: 'brands-list',
-        label: '品牌列表',
-        icon: <TagsOutlined />,
-        path: '/dashboard/brands',
-      },
-      {
-        key: 'brands-add',
-        label: '添加品牌',
-        icon: <PlusOutlined />,
-        path: '/dashboard/brands/add',
-      },
-    ],
+    path: '/dashboard/brands',
   },
   {
     key: 'reports',
     label: '分析报告',
     icon: <BarChartOutlined />,
-    children: [
-      {
-        key: 'reports-overview',
-        label: '数据概览',
-        icon: <DashboardOutlined />,
-        path: '/dashboard/reports',
-      },
-      {
-        key: 'reports-trends',
-        label: '趋势分析',
-        icon: <LineChartOutlined />,
-        path: '/dashboard/reports/trends',
-      },
-    ],
-  },
-  {
-    key: 'settings',
-    label: '设置',
-    icon: <SettingOutlined />,
-    children: [
-      {
-        key: 'settings-personal',
-        label: '个人设置',
-        icon: <UserOutlined />,
-        path: '/dashboard/settings',
-      },
-      {
-        key: 'settings-system',
-        label: '系统设置',
-        icon: <SettingOutlined />,
-        path: '/dashboard/settings/system',
-      },
-    ],
+    path: '/dashboard/reports',
   },
 ];
 
