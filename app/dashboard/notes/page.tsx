@@ -15,16 +15,12 @@ import {
   DatePicker,
   Button,
   Space,
-  Pagination,
-  Input,
-  Empty,
-  Spin,
+  Table,
   Tag,
   Image,
   Avatar,
 } from 'antd';
 import {
-  SearchOutlined,
   ReloadOutlined,
   VideoCameraOutlined,
   PictureOutlined,
@@ -35,12 +31,38 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
+import type { ColumnsType } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
 
 dayjs.locale('zh-cn');
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+
+// 图片代理服务
+const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
+
+/**
+ * 获取代理后的图片 URL
+ * @param url 原始图片 URL
+ * @returns 代理后的 URL 或 undefined
+ */
+const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
+  if (!url) return undefined;
+  
+  // 如果已经是代理 URL，直接返回
+  if (url.includes('xhstool.cc/api/proxy')) {
+    return url;
+  }
+  
+  // 如果是相对路径，直接返回（不需要代理）
+  if (url.startsWith('/')) {
+    return url;
+  }
+  
+  // 外部 URL 通过代理访问
+  return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
+};
 
 interface Note {
   NoteId: string;
@@ -186,6 +208,170 @@ export default function NotesPage() {
     return num.toString();
   };
 
+  // 定义表格列
+  const columns: ColumnsType<Note> = [
+    {
+      title: '封面',
+      dataIndex: 'CoverImage',
+      key: 'CoverImage',
+      width: 100,
+      render: (image: string | null, record: Note) => (
+        <div style={{ 
+          width: 80, 
+          height: 60, 
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: 4,
+        }}>
+          {image ? (
+            <Image
+              src={getProxiedImageUrl(image)}
+              alt={record.Title || ''}
+              preview={false}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                background: '#f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                color: '#999',
+              }}
+            >
+              无图
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: '标题',
+      dataIndex: 'Title',
+      key: 'Title',
+      width: 300,
+      ellipsis: true,
+      render: (text: string, record: Note) => (
+        <div>
+          <div style={{ marginBottom: 8, fontWeight: 500 }}>
+            {text || '无标题'}
+          </div>
+          <Space size="small" wrap>
+            {record.NoteType === 'video' ? (
+              <Tag color="blue" icon={<VideoCameraOutlined />}>
+                视频
+              </Tag>
+            ) : (
+              <Tag color="green" icon={<PictureOutlined />}>
+                图文
+              </Tag>
+            )}
+            {record.IsAdNote && <Tag color="red">广告</Tag>}
+            {record.IsBusiness && <Tag color="orange">商业</Tag>}
+          </Space>
+        </div>
+      ),
+    },
+    {
+      title: '博主',
+      key: 'Blogger',
+      width: 150,
+      render: (_, record: Note) => (
+        <Space>
+          <Avatar
+            size="small"
+            src={getProxiedImageUrl(record.SmallAvatar || record.BigAvatar)}
+          >
+            {record.BloggerNickName?.[0]}
+          </Avatar>
+          <span style={{ fontSize: 12 }}>
+            {record.BloggerNickName || '未知博主'}
+          </span>
+        </Space>
+      ),
+    },
+    {
+      title: '品牌',
+      dataIndex: 'BrandName',
+      key: 'BrandName',
+      width: 120,
+      render: (brandName: string | null) =>
+        brandName ? (
+          <Tag color="blue">{brandName}</Tag>
+        ) : (
+          <span style={{ color: '#999' }}>-</span>
+        ),
+    },
+    {
+      title: '发布时间',
+      dataIndex: 'PublishTime',
+      key: 'PublishTime',
+      width: 160,
+      render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
+    },
+    {
+      title: '点赞',
+      dataIndex: 'LikedCount',
+      key: 'LikedCount',
+      width: 80,
+      align: 'right',
+      render: (count: number) => (
+        <Space size="small">
+          <LikeOutlined />
+          {formatNumber(count)}
+        </Space>
+      ),
+    },
+    {
+      title: '浏览',
+      dataIndex: 'ViewCount',
+      key: 'ViewCount',
+      width: 80,
+      align: 'right',
+      render: (count: number) => (
+        <Space size="small">
+          <EyeOutlined />
+          {formatNumber(count)}
+        </Space>
+      ),
+    },
+    {
+      title: '评论',
+      dataIndex: 'CommentsCount',
+      key: 'CommentsCount',
+      width: 80,
+      align: 'right',
+      render: (count: number) => (
+        <Space size="small">
+          <CommentOutlined />
+          {formatNumber(count)}
+        </Space>
+      ),
+    },
+    {
+      title: '分享',
+      dataIndex: 'ShareCount',
+      key: 'ShareCount',
+      width: 80,
+      align: 'right',
+      render: (count: number) => (
+        <Space size="small">
+          <ShareAltOutlined />
+          {formatNumber(count)}
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <div>
       <h1 style={{ fontSize: 24, marginBottom: 24 }}>全部笔记</h1>
@@ -266,162 +452,32 @@ export default function NotesPage() {
       </Card>
 
       {/* 笔记列表 */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-          <Spin size="large" />
-        </div>
-      ) : notes.length === 0 ? (
-        <Empty description="暂无笔记数据" />
-      ) : (
-        <>
-          <Row gutter={[16, 16]}>
-            {notes.map((note) => (
-              <Col xs={24} sm={12} lg={8} xl={6} key={note.NoteId}>
-                <Card
-                  hoverable
-                  cover={
-                    note.CoverImage ? (
-                      <div style={{ position: 'relative', paddingTop: '75%' }}>
-                        <Image
-                          src={note.CoverImage}
-                          alt={note.Title || ''}
-                          preview={false}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                          }}
-                        />
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: 8,
-                            right: 8,
-                            zIndex: 1,
-                          }}
-                        >
-                          {note.NoteType === 'video' ? (
-                            <Tag color="blue" icon={<VideoCameraOutlined />}>
-                              视频
-                            </Tag>
-                          ) : (
-                            <Tag color="green" icon={<PictureOutlined />}>
-                              图文
-                            </Tag>
-                          )}
-                          {note.IsAdNote && <Tag color="red">广告</Tag>}
-                          {note.IsBusiness && <Tag color="orange">商业</Tag>}
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        style={{
-                          height: 200,
-                          background: '#f0f0f0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        无封面图
-                      </div>
-                    )
-                  }
-                  actions={[
-                    <Space key="like" size="small">
-                      <LikeOutlined />
-                      {formatNumber(note.LikedCount)}
-                    </Space>,
-                    <Space key="view" size="small">
-                      <EyeOutlined />
-                      {formatNumber(note.ViewCount)}
-                    </Space>,
-                    <Space key="comment" size="small">
-                      <CommentOutlined />
-                      {formatNumber(note.CommentsCount)}
-                    </Space>,
-                    <Space key="share" size="small">
-                      <ShareAltOutlined />
-                      {formatNumber(note.ShareCount)}
-                    </Space>,
-                  ]}
-                >
-                  <Card.Meta
-                    title={
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 500,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          marginBottom: 8,
-                        }}
-                      >
-                        {note.Title || '无标题'}
-                      </div>
-                    }
-                    description={
-                      <div>
-                        <div style={{ marginBottom: 8 }}>
-                          <Space>
-                            <Avatar
-                              size="small"
-                              src={note.SmallAvatar || note.BigAvatar}
-                            >
-                              {note.BloggerNickName?.[0]}
-                            </Avatar>
-                            <span style={{ fontSize: 12 }}>
-                              {note.BloggerNickName || '未知博主'}
-                            </span>
-                            {note.BrandName && (
-                              <Tag color="blue" style={{ fontSize: 11 }}>
-                                {note.BrandName}
-                              </Tag>
-                            )}
-                          </Space>
-                        </div>
-                        <div style={{ fontSize: 12, color: '#999' }}>
-                          {dayjs(note.PublishTime).format('YYYY-MM-DD HH:mm')}
-                        </div>
-                      </div>
-                    }
-                  />
-                </Card>
-              </Col>
-            ))}
-          </Row>
-
-          {/* 分页 */}
-          <div style={{ marginTop: 24, textAlign: 'right' }}>
-            <Pagination
-              current={page}
-              pageSize={pageSize}
-              total={total}
-              showSizeChanger
-              showQuickJumper
-              showTotal={(total, range) =>
-                `第 ${range[0]}-${range[1]} 条，共 ${total} 条`
-              }
-              onChange={(newPage, newPageSize) => {
-                if (newPageSize !== pageSize) {
-                  setPageSize(newPageSize);
-                  setPage(1);
-                } else {
-                  setPage(newPage);
-                  loadNotes(newPage);
-                }
-              }}
-              pageSizeOptions={['10', '20', '50', '100']}
-            />
-          </div>
-        </>
-      )}
+      <Table
+        columns={columns}
+        dataSource={notes}
+        rowKey="NoteId"
+        loading={loading}
+        pagination={{
+          current: page,
+          pageSize: pageSize,
+          total: total,
+          showSizeChanger: true,
+          showQuickJumper: true,
+          showTotal: (total, range) =>
+            `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          onChange: (newPage, newPageSize) => {
+            if (newPageSize !== pageSize) {
+              setPageSize(newPageSize);
+              setPage(1);
+            } else {
+              setPage(newPage);
+              loadNotes(newPage);
+            }
+          },
+        }}
+        scroll={{ x: 1200 }}
+      />
     </div>
   );
 }
