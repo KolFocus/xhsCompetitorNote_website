@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
  * Dashboard 布局
  * 复用 (dashboard) 路由组的布局组件
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layout, Button, Avatar, Dropdown, Space } from 'antd';
 import {
   MenuFoldOutlined,
@@ -18,6 +18,7 @@ import {
 import { useRouter } from 'next/navigation';
 import SidebarMenu from '@/components/layout/SidebarMenu';
 import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
 
 const { Header, Sider, Content } = Layout;
 
@@ -27,6 +28,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
   const router = useRouter();
   
   // 延迟创建 Supabase 客户端（仅在需要时）
@@ -39,28 +42,40 @@ export default function DashboardLayout({
     }
   };
 
+  // 获取当前用户信息
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        if (supabase) {
+          const { data: { user }, error } = await supabase.auth.getUser();
+          if (error) {
+            console.error('Failed to get user:', error);
+          } else {
+            setUser(user);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUser();
+  }, []);
+
   /**
    * 退出登录
    */
   const handleLogout = async () => {
     try {
-      // 检查是否是 fake 登录
-      const fakeAuth = document.cookie.split('; ').find(row => row.startsWith('fake_auth='));
-      
-      if (fakeAuth) {
-        // 清除 fake 登录 cookie
-        document.cookie = 'fake_auth=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-        router.push('/login');
-        router.refresh();
-      } else {
-        // 真实 Supabase 登录
-        const supabase = getSupabaseClient();
-        if (supabase) {
-          await supabase.auth.signOut();
-        }
-        router.push('/login');
-        router.refresh();
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        await supabase.auth.signOut();
       }
+      router.push('/login');
+      router.refresh();
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -151,8 +166,13 @@ export default function DashboardLayout({
           <Space>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar icon={<UserOutlined />} />
-                <span>测试用户</span>
+                <Avatar icon={<UserOutlined />} src={user?.user_metadata?.avatar_url} />
+                <span>
+                  {loading 
+                    ? '加载中...' 
+                    : user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || '用户'
+                  }
+                </span>
               </Space>
             </Dropdown>
           </Space>

@@ -12,19 +12,6 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // 检查 fake 登录状态（优先检查）
-  const fakeAuth = request.cookies.get('fake_auth')?.value === 'true';
-  
-  // 如果使用 fake 登录，直接通过认证检查
-  if (fakeAuth) {
-    // 如果访问登录页且已登录，重定向到首页
-    if (request.nextUrl.pathname === '/login') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
-    // 已登录，允许访问
-    return response;
-  }
-
   // 检查环境变量
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;

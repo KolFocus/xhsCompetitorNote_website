@@ -33,27 +33,34 @@ const LoginPage: React.FC = () => {
 
   /**
    * 登录处理
-   * 临时实现：fake 登录，任意输入都可以登录成功
+   * 使用 Supabase 真实登录
    */
   const handleLogin = async (values: { email: string; password: string; remember?: boolean }) => {
     try {
       setLoginLoading(true);
       
-      // Fake 登录：通过 API 路由设置 cookie，确保服务器端可以读取
-      const response = await fetch('/api/auth/fake-login', {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        throw new Error('设置登录状态失败');
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        message.error('Supabase 未配置，登录功能暂不可用');
+        return;
       }
-      
-      // 模拟延迟，让用户感觉真实
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      message.success('登录成功');
-      // 使用 window.location 强制完整页面刷新，确保 cookie 被正确传递
-      window.location.href = '/dashboard';
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: values.email,
+        password: values.password,
+      });
+
+      if (error) {
+        message.error(error.message || '登录失败，请检查邮箱和密码');
+        return;
+      }
+
+      if (data.user) {
+        message.success('登录成功');
+        // 刷新页面以更新认证状态
+        router.push('/dashboard');
+        router.refresh();
+      }
     } catch (error) {
       console.error('Login error:', error);
       message.error('登录失败，请重试');
