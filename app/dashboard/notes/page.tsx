@@ -348,7 +348,7 @@ export default function NotesPage() {
             <Image
               src={getProxiedImageUrl(image)}
               alt={record.Title || ''}
-              preview={false}
+              preview={true}
               style={{
                 width: '100%',
                 height: '100%',

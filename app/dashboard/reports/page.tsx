@@ -22,16 +22,14 @@ import {
   Tooltip,
   Statistic,
   Tabs,
-  Input,
-  Checkbox,
   message,
   Empty,
   Modal,
+  Spin,
 } from 'antd';
 import {
   PlusOutlined,
   ReloadOutlined,
-  SearchOutlined,
   VideoCameraOutlined,
   PictureOutlined,
   LikeOutlined,
@@ -39,17 +37,23 @@ import {
   CommentOutlined,
   ShareAltOutlined,
   FileTextOutlined,
+  DeleteOutlined,
+  EyeInvisibleOutlined,
+  UndoOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
+import CreateReportModal from '@/components/reports/CreateReportModal';
+import AddNotesModal from '@/components/reports/AddNotesModal';
+import { useRouter } from 'next/navigation';
 
 dayjs.locale('zh-cn');
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
-const { Search } = Input;
 
 // 图片代理服务
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
@@ -79,6 +83,7 @@ interface ReportDetail extends Report {
 interface Note {
   noteId: string;
   title: string;
+  content: string | null;
   coverImage: string | null;
   noteType: string;
   isBusiness: boolean;
@@ -92,7 +97,9 @@ interface Note {
   bloggerId: string;
   bloggerNickName: string;
   bloggerSmallAvatar: string | null;
+  bloggerBigAvatar: string | null;
   brandId: string | null;
+  brandIdKey: string | null;
   brandName: string | null;
   videoDuration: string | null;
   status: string;
@@ -100,22 +107,52 @@ interface Note {
 }
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<Report[]>([]);
   const [reportId, setReportId] = useState<string | null>(null);
   const [reportDetail, setReportDetail] = useState<ReportDetail | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [notesLoading, setNotesLoading] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(true); // 报告列表加载状态
+  const [loading, setLoading] = useState(false); // 报告详情加载状态
+  const [notesLoading, setNotesLoading] = useState(false); // 笔记列表加载状态
   const [activeTab, setActiveTab] = useState<'active' | 'ignored'>('active');
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [addNotesModalVisible, setAddNotesModalVisible] = useState(false);
 
+  // 自定义滚动条样式
+  React.useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .tooltip-scrollable::-webkit-scrollbar {
+        width: 6px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+      }
+      .tooltip-scrollable::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   // 筛选条件
   const [brandId, setBrandId] = useState<string | null>(null);
   const [bloggerId, setBloggerId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
-  const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 排序状态（默认：publishTime 降序）
+  const [sortField, setSortField] = useState<string>('publishTime');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // 加载报告列表
   useEffect(() => {
@@ -128,11 +165,11 @@ export default function ReportsPage() {
       loadReportDetail(reportId);
       loadNotes();
     }
-  }, [reportId, activeTab, brandId, bloggerId, dateRange, searchKeyword]);
+  }, [reportId, activeTab, brandId, bloggerId, dateRange, sortField, sortOrder]);
 
   const loadReports = async () => {
     try {
-      setLoading(true);
+      setReportsLoading(true);
       const response = await fetch('/api/reports');
       const data = await response.json();
       if (data.success) {
@@ -145,7 +182,7 @@ export default function ReportsPage() {
     } catch (error) {
       message.error('加载报告列表失败');
     } finally {
-      setLoading(false);
+      setReportsLoading(false);
     }
   };
 
@@ -180,7 +217,10 @@ export default function ReportsPage() {
         params.set('startDate', dateRange[0].format('YYYY-MM-DD'));
         params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
       }
-      if (searchKeyword) params.set('search', searchKeyword);
+      if (sortField) {
+        params.set('orderBy', sortField);
+        params.set('order', sortOrder);
+      }
 
       const response = await fetch(`/api/reports/${reportId}/notes?${params}`);
       const data = await response.json();
@@ -194,19 +234,45 @@ export default function ReportsPage() {
     }
   };
 
-  const handleBatchAction = async (action: 'ignore' | 'delete' | 'restore') => {
-    if (!reportId || selectedNoteIds.length === 0) return;
+  const handleBatchAction = async (action: 'ignore' | 'delete' | 'restore', noteIds?: string[]) => {
+    const idsToProcess = noteIds || selectedNoteIds;
+    if (!reportId || idsToProcess.length === 0) return;
 
     if (action === 'delete') {
       Modal.confirm({
         title: '确认删除',
-        content: `确定要删除选中的 ${selectedNoteIds.length} 条笔记吗？此操作不可恢复。`,
+        content: `确定要删除选中的 ${idsToProcess.length} 条笔记吗？此操作会从当前报告中移除${idsToProcess.length === 1 ? '该笔记' : '这些笔记'}，但不会导致笔记从系统中删除。`,
         onOk: async () => {
           try {
             const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action, noteIds: selectedNoteIds }),
+              body: JSON.stringify({ action, noteIds: idsToProcess }),
+            });
+            const data = await response.json();
+            if (data.success) {
+              message.success('操作成功');
+              setSelectedNoteIds([]);
+              loadNotes();
+              loadReportDetail(reportId);
+            } else {
+              message.error(data.error || '操作失败');
+            }
+          } catch (error) {
+            message.error('操作失败');
+          }
+        },
+      });
+    } else if (action === 'ignore') {
+      Modal.confirm({
+        title: '确认忽略',
+        content: `确定忽略${idsToProcess.length}条笔记？忽略的笔记出现在忽略列表中，可以重新恢复。`,
+        onOk: async () => {
+          try {
+            const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action, noteIds: idsToProcess }),
             });
             const data = await response.json();
             if (data.success) {
@@ -227,7 +293,7 @@ export default function ReportsPage() {
         const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, noteIds: selectedNoteIds }),
+          body: JSON.stringify({ action, noteIds: idsToProcess }),
         });
         const data = await response.json();
         if (data.success) {
@@ -240,6 +306,40 @@ export default function ReportsPage() {
         }
       } catch (error) {
         message.error('操作失败');
+      }
+    }
+  };
+
+  // 处理列头点击排序
+  const handleSortClick = (field: string, e?: React.MouseEvent) => {
+    // 阻止默认行为和事件冒泡，避免触发 Ant Design 的默认排序处理
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (sortField === field) {
+      // 如果点击的是当前排序字段，切换排序方向
+      setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+    } else {
+      // 如果切换到其他字段，从升序开始
+      setSortField(field);
+      setSortOrder('asc');
+    }
+  };
+
+  // 处理表格排序变化（保留用于兼容性）
+  const handleTableChange: TableProps<Note>['onChange'] = (
+    pagination,
+    filters,
+    sorter,
+    extra
+  ) => {
+    if (extra.action === 'sort' && sorter) {
+      const order = Array.isArray(sorter) ? sorter[0] : sorter;
+      if (order.field) {
+        const field = order.field as string;
+        handleSortClick(field);
       }
     }
   };
@@ -257,15 +357,43 @@ export default function ReportsPage() {
       dataIndex: 'coverImage',
       key: 'coverImage',
       width: 100,
-      render: (url: string | null) => (
+      fixed: 'left',
+      render: (image: string | null, record: Note) => (
+        <div style={{ 
+          width: 60,
+          height: 80,
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: 4,
+        }}>
+          {image ? (
         <Image
-          width={60}
-          height={80}
-          src={getProxiedImageUrl(url)}
-          alt="封面"
-          fallback="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='80'%3E%3Crect width='60' height='80' fill='%23f0f0f0'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%23999'%3E无图%3C/text%3E%3C/svg%3E"
-          style={{ objectFit: 'cover', borderRadius: 4 }}
-        />
+              src={getProxiedImageUrl(image)}
+              alt={record.title || ''}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                display: 'block',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                background: '#f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                color: '#999',
+              }}
+            >
+              无图
+            </div>
+          )}
+        </div>
       ),
     },
     {
@@ -273,37 +401,66 @@ export default function ReportsPage() {
       dataIndex: 'title',
       key: 'title',
       width: 300,
-      render: (title: string, record: Note) => (
+      fixed: 'left',
+      ellipsis: true,
+      render: (text: string, record: Note) => {
+        const content = record.content?.trim() || '';
+        const tooltipContent = content ? (
+          <div 
+            className="tooltip-scrollable"
+            style={{ 
+              maxWidth: 400, 
+              maxHeight: 300, 
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap', 
+              wordBreak: 'break-word' 
+            }}
+          >
+            {content}
+          </div>
+        ) : (
+          '未采集'
+        );
+
+        return (
         <div>
-          <Tooltip title={title}>
-            <div style={{ marginBottom: 4 }}>{title}</div>
+            <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+              <div style={{ marginBottom: 8, fontWeight: 500 }}>
+                {text || '无标题'}
+              </div>
           </Tooltip>
-          <Space size={4}>
-            {record.noteType === 'video' && (
+            <Space size="small" wrap>
+              {record.noteType === 'video' ? (
               <Tag color="blue" icon={<VideoCameraOutlined />}>
-                {record.videoDuration || '视频'}
+                  {record.videoDuration ? `${record.videoDuration}` : '视频'}
+                </Tag>
+              ) : (
+                <Tag color="green" icon={<PictureOutlined />}>
+                  图文
               </Tag>
-            )}
-            {record.noteType === 'image' && (
-              <Tag color="green" icon={<PictureOutlined />}>图文</Tag>
             )}
             {record.isAdNote && <Tag color="red">广告</Tag>}
             {record.isBusiness && <Tag color="orange">商业</Tag>}
           </Space>
         </div>
-      ),
+        );
+      },
     },
     {
       title: '博主',
-      dataIndex: 'bloggerNickName',
-      key: 'bloggerNickName',
+      key: 'blogger',
       width: 150,
-      render: (name: string, record: Note) => (
+      render: (_: any, record: Note) => (
         <Space>
-          <Avatar size="small" src={getProxiedImageUrl(record.bloggerSmallAvatar)}>
-            {name?.[0]}
+          <Avatar
+            size="small"
+            src={getProxiedImageUrl(record.bloggerSmallAvatar || record.bloggerBigAvatar)}
+          >
+            {record.bloggerNickName?.[0]}
           </Avatar>
-          <span style={{ fontSize: 12 }}>{name}</span>
+          <span style={{ fontSize: 12 }}>
+            {record.bloggerNickName || '未知博主'}
+          </span>
         </Space>
       ),
     },
@@ -312,8 +469,24 @@ export default function ReportsPage() {
       dataIndex: 'brandName',
       key: 'brandName',
       width: 120,
-      render: (name: string | null) =>
-        name ? <Tag color="blue">{name}</Tag> : <span style={{ color: '#999' }}>-</span>,
+      render: (brandName: string | null, record: Note) => {
+        if (!brandName || !record.brandId || !record.brandIdKey) {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        const qianGuaUrl = `https://app.qian-gua.com/#/brand/detail/${record.brandId}/${record.brandIdKey}`;
+        return (
+          <Tag
+            color="blue"
+            style={{ cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              window.open(qianGuaUrl, '_blank');
+            }}
+          >
+            {brandName}
+          </Tag>
+        );
+      },
     },
     {
       title: '互动',
@@ -334,8 +507,13 @@ export default function ReportsPage() {
       key: 'likedCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'likedCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('likedCount', e),
+      }),
       render: (count: number) => (
-        <Space>
+        <Space size="small">
           <LikeOutlined />
           {formatNumber(count)}
         </Space>
@@ -347,8 +525,13 @@ export default function ReportsPage() {
       key: 'viewCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'viewCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('viewCount', e),
+      }),
       render: (count: number) => (
-        <Space>
+        <Space size="small">
           <EyeOutlined />
           {formatNumber(count)}
         </Space>
@@ -360,8 +543,13 @@ export default function ReportsPage() {
       key: 'commentsCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'commentsCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('commentsCount', e),
+      }),
       render: (count: number) => (
-        <Space>
+        <Space size="small">
           <CommentOutlined />
           {formatNumber(count)}
         </Space>
@@ -373,8 +561,13 @@ export default function ReportsPage() {
       key: 'shareCount',
       width: 80,
       align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'shareCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('shareCount', e),
+      }),
       render: (count: number) => (
-        <Space>
+        <Space size="small">
           <ShareAltOutlined />
           {formatNumber(count)}
         </Space>
@@ -385,12 +578,19 @@ export default function ReportsPage() {
       dataIndex: 'publishTime',
       key: 'publishTime',
       width: 160,
+      sorter: true,
+      defaultSortOrder: 'descend',
+      sortOrder: sortField === 'publishTime' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('publishTime', e),
+      }),
       render: (time: string) => dayjs(time).format('YYYY-MM-DD HH:mm'),
     },
     {
       title: '操作',
       key: 'action',
       width: 150,
+      fixed: 'right',
       render: (_: any, record: Note) => (
         <Space>
           {activeTab === 'active' && (
@@ -398,7 +598,7 @@ export default function ReportsPage() {
               <Button
                 type="link"
                 size="small"
-                onClick={() => handleBatchAction('ignore')}
+                onClick={() => handleBatchAction('ignore', [record.noteId])}
               >
                 忽略
               </Button>
@@ -406,10 +606,7 @@ export default function ReportsPage() {
                 type="link"
                 size="small"
                 danger
-                onClick={() => {
-                  setSelectedNoteIds([record.noteId]);
-                  handleBatchAction('delete');
-                }}
+                onClick={() => handleBatchAction('delete', [record.noteId])}
               >
                 删除
               </Button>
@@ -419,10 +616,7 @@ export default function ReportsPage() {
             <Button
               type="link"
               size="small"
-              onClick={() => {
-                setSelectedNoteIds([record.noteId]);
-                handleBatchAction('restore');
-              }}
+              onClick={() => handleBatchAction('restore', [record.noteId])}
             >
               恢复
             </Button>
@@ -432,7 +626,16 @@ export default function ReportsPage() {
     },
   ];
 
-  // 空状态
+  // 加载报告列表时显示整体loading
+  if (reportsLoading) {
+    return (
+      <div style={{ textAlign: 'center', padding: '200px 0' }}>
+        <Spin size="large" tip="加载中..." />
+      </div>
+    );
+  }
+
+  // 报告列表为空时显示空状态
   if (reports.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
@@ -447,6 +650,20 @@ export default function ReportsPage() {
       </div>
     );
   }
+
+  // 处理创建报告成功
+  const handleCreateReportSuccess = (newReportId: string) => {
+    loadReports(); // 重新加载报告列表
+    setReportId(newReportId); // 选中新创建的报告
+  };
+
+  // 处理追加笔记成功
+  const handleAddNotesSuccess = () => {
+    if (reportId) {
+      loadReportDetail(reportId); // 重新加载报告详情
+      loadNotes(); // 重新加载笔记列表
+    }
+  };
 
   return (
     <div style={{ padding: 24 }}>
@@ -487,59 +704,55 @@ export default function ReportsPage() {
         <>
           {/* 报告信息卡片 */}
           <Row gutter={16} style={{ marginBottom: 24 }}>
-            <Col span={8}>
+          <Col span={8}>
               <Card>
                 <Statistic
-                  title="报告名称"
-                  value={reportDetail.reportName}
-                  valueStyle={{ fontSize: 20 }}
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card>
-                <Statistic
-                  title="创建时间"
-                  value={dayjs(reportDetail.createdAt).format('YYYY-MM-DD HH:mm')}
-                  valueStyle={{ fontSize: 20 }}
-                />
-              </Card>
-            </Col>
-            <Col span={8}>
-              <Card>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ color: '#999', marginBottom: 8 }}>统计范围</div>
-                  <div style={{ fontSize: 20 }}>
-                    {reportDetail.earliestNoteTime
-                      ? dayjs(reportDetail.earliestNoteTime).format('YYYY-MM-DD')
-                      : '-'}{' '}
-                    至{' '}
-                    {reportDetail.latestNoteTime
-                      ? dayjs(reportDetail.latestNoteTime).format('YYYY-MM-DD')
-                      : '-'}
-                  </div>
-                </div>
-              </Card>
-            </Col>
-          </Row>
-
-          {/* 统计信息卡片 */}
-          <Row gutter={16} style={{ marginBottom: 24 }}>
-            <Col span={12}>
-              <Card>
-                <Statistic
-                  title="有效笔记"
+                  title={
+                    <Space size={4}>
+                      <span>有效笔记</span>
+                      <Tooltip title="参与统计和分析的笔记列表">
+                        <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                      </Tooltip>
+                    </Space>
+                  }
                   value={reportDetail.activeNotesCount}
                   valueStyle={{ color: '#1890ff' }}
                 />
               </Card>
             </Col>
-            <Col span={12}>
+            <Col span={8}>
               <Card>
                 <Statistic
-                  title="已忽略"
+                  title={
+                    <Space size={4}>
+                      <span>已忽略</span>
+                      <Tooltip title="在按品牌导入的笔记中，定向剔除无需参与统计的笔记">
+                        <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                      </Tooltip>
+                    </Space>
+                  }
                   value={reportDetail.ignoredNotesCount}
                   valueStyle={{ color: '#999' }}
+                />
+              </Card>
+            </Col>
+            <Col span={8}>
+              <Card>
+                <Statistic
+                  title={
+                    <Space size={4}>
+                      <span>时间范围</span>
+                      <Tooltip title="当前笔记列表中，发布时间的最早和最晚时间">
+                        <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                      </Tooltip>
+                    </Space>
+                  }
+                  value={
+                    reportDetail.earliestNoteTime && reportDetail.latestNoteTime
+                      ? `${dayjs(reportDetail.earliestNoteTime).format('YYYY-MM-DD')} 至 ${dayjs(reportDetail.latestNoteTime).format('YYYY-MM-DD')}`
+                      : '-'
+                  }
+                  valueStyle={{ color: '#999', fontSize: 16 }}
                 />
               </Card>
             </Col>
@@ -596,7 +809,6 @@ export default function ReportsPage() {
                     setBrandId(null);
                     setBloggerId(null);
                     setDateRange(null);
-                    setSearchKeyword('');
                   }}
                 >
                   重置
@@ -606,24 +818,6 @@ export default function ReportsPage() {
           </Card>
 
           {/* 操作栏 */}
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setAddNotesModalVisible(true)}
-            >
-              追加笔记
-            </Button>
-            <Search
-              placeholder="搜索笔记标题、品牌..."
-              style={{ width: 300 }}
-              value={searchKeyword}
-              onChange={(e) => setSearchKeyword(e.target.value)}
-              onSearch={loadNotes}
-              allowClear
-            />
-          </div>
-
           {/* Tab切换 */}
           <Tabs
             activeKey={activeTab}
@@ -635,50 +829,49 @@ export default function ReportsPage() {
               { key: 'active', label: '有效笔记' },
               { key: 'ignored', label: '已忽略' },
             ]}
-          />
-
-          {/* 批量操作栏 */}
-          {selectedNoteIds.length > 0 && (
-            <div
-              style={{
-                padding: '12px 16px',
-                background: '#f5f5f5',
-                marginBottom: 16,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
+            tabBarExtraContent={
               <Space>
-                <Checkbox
-                  checked={selectedNoteIds.length === notes.length}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedNoteIds(notes.map((n) => n.noteId));
-                    } else {
-                      setSelectedNoteIds([]);
-                    }
-                  }}
-                >
-                  全选
-                </Checkbox>
-                <span style={{ color: '#999' }}>已选择 {selectedNoteIds.length} 项</span>
-              </Space>
-              <Space>
-                {activeTab === 'active' && (
+                {/* 批量操作按钮 - 仅在选中时显示 */}
+                {selectedNoteIds.length > 0 && (
                   <>
-                    <Button onClick={() => handleBatchAction('ignore')}>忽略</Button>
-                    <Button danger onClick={() => handleBatchAction('delete')}>
-                      删除
-                    </Button>
+                    {activeTab === 'active' && (
+                      <>
+                        <Button
+                          icon={<EyeInvisibleOutlined />}
+                          onClick={() => handleBatchAction('ignore')}
+                        >
+                          忽略
+                        </Button>
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleBatchAction('delete')}
+                        >
+                          删除
+                        </Button>
+                      </>
+                    )}
+                    {activeTab === 'ignored' && (
+                      <Button
+                        icon={<UndoOutlined />}
+                        onClick={() => handleBatchAction('restore')}
+                      >
+                        恢复
+                      </Button>
+                    )}
                   </>
                 )}
-                {activeTab === 'ignored' && (
-                  <Button onClick={() => handleBatchAction('restore')}>恢复</Button>
-                )}
+                {/* 追加笔记按钮 - 始终显示 */}
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={() => setAddNotesModalVisible(true)}
+                >
+                  追加笔记
+                </Button>
               </Space>
-            </div>
-          )}
+            }
+          />
 
           {/* 笔记列表表格 */}
           <Table
@@ -686,6 +879,8 @@ export default function ReportsPage() {
             dataSource={notes}
             rowKey="noteId"
             loading={notesLoading}
+            onChange={handleTableChange}
+            showSorterTooltip={false}
             rowSelection={{
               selectedRowKeys: selectedNoteIds,
               onChange: (keys) => setSelectedNoteIds(keys as string[]),
@@ -696,9 +891,28 @@ export default function ReportsPage() {
               showSizeChanger: true,
               showTotal: (total) => `共 ${total} 条`,
             }}
-            scroll={{ x: 1200 }}
+            scroll={{ x: 1400 }}
           />
         </>
+      )}
+
+      {/* 创建报告 Modal */}
+      <CreateReportModal
+        open={createModalVisible}
+        onCancel={() => setCreateModalVisible(false)}
+        onSuccess={handleCreateReportSuccess}
+      />
+
+      {/* 追加笔记 Modal */}
+      {reportDetail && (
+        <AddNotesModal
+          open={addNotesModalVisible}
+          reportId={reportId!}
+          reportName={reportDetail.reportName}
+          defaultBrandIds={reportDetail.brands.map((b) => b.brandId)}
+          onCancel={() => setAddNotesModalVisible(false)}
+          onSuccess={handleAddNotesSuccess}
+        />
       )}
     </div>
   );

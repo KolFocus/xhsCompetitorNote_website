@@ -71,6 +71,7 @@ export async function GET(
         qiangua_note_info (
           NoteId,
           Title,
+          Content,
           CoverImage,
           NoteType,
           IsBusiness,
@@ -83,8 +84,10 @@ export async function GET(
           ShareCount,
           BloggerId,
           BloggerNickName,
+          BigAvatar,
           SmallAvatar,
           BrandId,
+          BrandIdKey,
           BrandName,
           VideoDuration
         )
@@ -134,6 +137,7 @@ export async function GET(
         return {
           noteId: note.NoteId,
           title: note.Title,
+          content: note.Content,
           coverImage: note.CoverImage,
           noteType: note.NoteType,
           isBusiness: note.IsBusiness,
@@ -147,7 +151,9 @@ export async function GET(
           bloggerId: note.BloggerId,
           bloggerNickName: note.BloggerNickName,
           bloggerSmallAvatar: note.SmallAvatar,
+          bloggerBigAvatar: note.BigAvatar,
           brandId: note.BrandId,
+          brandIdKey: note.BrandIdKey,
           brandName: note.BrandName,
           videoDuration: note.VideoDuration,
           status: item.Status,
@@ -157,9 +163,20 @@ export async function GET(
       .filter((note: any) => note !== null);
 
     // 应用排序
+    const fieldMap: Record<string, string> = {
+      'publishtime': 'publishTime',
+      'likedcount': 'likedCount',
+      'viewcount': 'viewCount',
+      'commentscount': 'commentsCount',
+      'sharecount': 'shareCount',
+    };
+    const mappedField = fieldMap[orderBy.toLowerCase()] || orderBy.toLowerCase();
     notes.sort((a: any, b: any) => {
-      const aVal = a[orderBy.toLowerCase()] || 0;
-      const bVal = b[orderBy.toLowerCase()] || 0;
+      const aVal = a[mappedField] || 0;
+      const bVal = b[mappedField] || 0;
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return order === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
       return order === 'asc' ? aVal - bVal : bVal - aVal;
     });
 
