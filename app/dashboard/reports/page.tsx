@@ -739,21 +739,22 @@ export default function ReportsPage() {
             <Col span={8}>
               <Card>
                 <Statistic
-                  title={
-                    <Space size={4}>
-                      <span>时间范围</span>
-                      <Tooltip title="当前笔记列表中，发布时间的最早和最晚时间">
-                        <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
-                      </Tooltip>
-                    </Space>
-                  }
-                  value={
-                    reportDetail.earliestNoteTime && reportDetail.latestNoteTime
-                      ? `${dayjs(reportDetail.earliestNoteTime).format('YYYY-MM-DD')} 至 ${dayjs(reportDetail.latestNoteTime).format('YYYY-MM-DD')}`
-                      : '-'
-                  }
-                  valueStyle={{ color: '#999', fontSize: 16 }}
-                />
+                    title={
+                      <Space size={4}>
+                        <span>时间范围</span>
+                        <Tooltip title="当前笔记列表中，笔记发布的最早时间和最晚时间">
+                          <QuestionCircleOutlined style={{ color: '#999', cursor: 'help' }} />
+                        </Tooltip>
+                      </Space>
+                    }
+                    value={0}
+                    formatter={() => 
+                      reportDetail.earliestNoteTime && reportDetail.latestNoteTime
+                        ? `${dayjs(reportDetail.earliestNoteTime).format('YYYY-MM-DD')} 至 ${dayjs(reportDetail.latestNoteTime).format('YYYY-MM-DD')}`
+                        : '-'
+                    }
+                    valueStyle={{ color: '#999' }}
+                  />
               </Card>
             </Col>
           </Row>

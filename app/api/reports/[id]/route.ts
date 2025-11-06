@@ -54,20 +54,28 @@ export async function GET(
       .eq('ReportId', reportId)
       .eq('Status', 'ignored');
 
-    // 获取时间范围
-    const { data: timeRange } = await supabase
+    // 获取时间范围（包括所有笔记）
+    const { data: timeRangeData } = await supabase
       .from('qiangua_report_note_rel')
       .select('qiangua_note_info(PublishTime)')
-      .eq('ReportId', reportId)
-      .order('qiangua_note_info.PublishTime', { ascending: true })
-      .limit(1);
+      .eq('ReportId', reportId);
 
-    const { data: timeRangeMax } = await supabase
-      .from('qiangua_report_note_rel')
-      .select('qiangua_note_info(PublishTime)')
-      .eq('ReportId', reportId)
-      .order('qiangua_note_info.PublishTime', { ascending: false })
-      .limit(1);
+    // 从查询结果中提取所有有效的发布时间
+    const publishTimes = timeRangeData
+      ?.map((item: any) => item.qiangua_note_info?.PublishTime)
+      .filter((time: any) => time != null) || [];
+
+    // 计算最早和最晚时间
+    let earliestNoteTime: string | null = null;
+    let latestNoteTime: string | null = null;
+    
+    if (publishTimes.length > 0) {
+      const sortedTimes = publishTimes.sort((a: string, b: string) => 
+        new Date(a).getTime() - new Date(b).getTime()
+      );
+      earliestNoteTime = sortedTimes[0];
+      latestNoteTime = sortedTimes[sortedTimes.length - 1];
+    }
 
     // 获取品牌列表
     const { data: brandsData } = await supabase
@@ -96,8 +104,8 @@ export async function GET(
         updatedAt: report.UpdatedAt,
         activeNotesCount: activeCount || 0,
         ignoredNotesCount: ignoredCount || 0,
-        earliestNoteTime: timeRange?.[0]?.qiangua_note_info?.PublishTime || null,
-        latestNoteTime: timeRangeMax?.[0]?.qiangua_note_info?.PublishTime || null,
+        earliestNoteTime,
+        latestNoteTime,
         brands: Array.from(brandsMap.values()),
       },
     });
