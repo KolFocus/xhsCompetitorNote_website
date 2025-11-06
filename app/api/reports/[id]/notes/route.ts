@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -24,12 +24,13 @@ export async function GET(
 
     const reportId = params.id;
 
-    // 验证报告存在且属于当前用户
+    // 验证报告存在且属于当前用户（仅查询有效报告）
     const { data: report } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('ReportId')
       .eq('ReportId', reportId)
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .single();
 
     if (!report) {
@@ -60,9 +61,9 @@ export async function GET(
       );
     }
 
-    // 构建查询 - 从 report_notes 开始，关联 qiangua_note_info
+    // 构建查询 - 从 qiangua_report_note_rel 开始，关联 qiangua_note_info
     let query = supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select(`
         NoteId,
         Status,

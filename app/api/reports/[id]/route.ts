@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -25,12 +25,13 @@ export async function GET(
 
     const reportId = params.id;
 
-    // 查询报告
+    // 查询报告（仅查询有效报告）
     const { data: report, error: reportError } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('*')
       .eq('ReportId', reportId)
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .single();
 
     if (reportError || !report) {
@@ -42,27 +43,27 @@ export async function GET(
 
     // 获取统计信息
     const { count: activeCount } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('*', { count: 'exact', head: true })
       .eq('ReportId', reportId)
       .eq('Status', 'active');
 
     const { count: ignoredCount } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('*', { count: 'exact', head: true })
       .eq('ReportId', reportId)
       .eq('Status', 'ignored');
 
     // 获取时间范围
     const { data: timeRange } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('qiangua_note_info(PublishTime)')
       .eq('ReportId', reportId)
       .order('qiangua_note_info.PublishTime', { ascending: true })
       .limit(1);
 
     const { data: timeRangeMax } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('qiangua_note_info(PublishTime)')
       .eq('ReportId', reportId)
       .order('qiangua_note_info.PublishTime', { ascending: false })
@@ -70,7 +71,7 @@ export async function GET(
 
     // 获取品牌列表
     const { data: brandsData } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('qiangua_note_info(BrandId, BrandName)')
       .eq('ReportId', reportId)
       .not('qiangua_note_info.BrandId', 'is', null);
@@ -114,7 +115,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -127,12 +128,13 @@ export async function DELETE(
 
     const reportId = params.id;
 
-    // 验证报告存在且属于当前用户
+    // 验证报告存在且属于当前用户（仅查询有效报告）
     const { data: report, error: reportError } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('ReportId')
       .eq('ReportId', reportId)
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .single();
 
     if (reportError || !report) {
@@ -142,11 +144,12 @@ export async function DELETE(
       );
     }
 
-    // 删除报告（级联删除关联的 report_notes）
+    // 逻辑删除报告（更新状态为 'hide'）
     const { error: deleteError } = await supabase
-      .from('reports')
-      .delete()
-      .eq('ReportId', reportId);
+      .from('qiangua_report')
+      .update({ Status: 'hide' })
+      .eq('ReportId', reportId)
+      .eq('UserId', user.id);
 
     if (deleteError) {
       console.error('Error deleting report:', deleteError);

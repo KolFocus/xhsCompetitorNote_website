@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -25,12 +25,13 @@ export async function POST(
 
     const reportId = params.id;
 
-    // 验证报告存在且属于当前用户
+    // 验证报告存在且属于当前用户（仅查询有效报告）
     const { data: report } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('ReportId')
       .eq('ReportId', reportId)
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .single();
 
     if (!report) {
@@ -53,7 +54,7 @@ export async function POST(
 
     // 获取报告中已有的笔记ID（无论状态）
     const { data: existingNotes } = await supabase
-      .from('report_notes')
+      .from('qiangua_report_note_rel')
       .select('NoteId')
       .eq('ReportId', reportId);
 

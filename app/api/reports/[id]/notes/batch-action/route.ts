@@ -11,7 +11,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -24,12 +24,13 @@ export async function POST(
 
     const reportId = params.id;
 
-    // 验证报告存在且属于当前用户
+    // 验证报告存在且属于当前用户（仅查询有效报告）
     const { data: report } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('ReportId')
       .eq('ReportId', reportId)
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .single();
 
     if (!report) {
@@ -64,7 +65,7 @@ export async function POST(
     if (action === 'delete') {
       // 删除操作：物理删除
       const { error: deleteError } = await supabase
-        .from('report_notes')
+        .from('qiangua_report_note_rel')
         .delete()
         .eq('ReportId', reportId)
         .in('NoteId', noteIds);
@@ -81,7 +82,7 @@ export async function POST(
     } else if (action === 'ignore') {
       // 忽略操作：更新状态为 ignored（只更新 active 状态的笔记）
       const { error: updateError } = await supabase
-        .from('report_notes')
+        .from('qiangua_report_note_rel')
         .update({ Status: 'ignored' })
         .eq('ReportId', reportId)
         .eq('Status', 'active')
@@ -99,7 +100,7 @@ export async function POST(
     } else if (action === 'restore') {
       // 恢复操作：更新状态为 active（只更新 ignored 状态的笔记）
       const { error: updateError } = await supabase
-        .from('report_notes')
+        .from('qiangua_report_note_rel')
         .update({ Status: 'active' })
         .eq('ReportId', reportId)
         .eq('Status', 'ignored')

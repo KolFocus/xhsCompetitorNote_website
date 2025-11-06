@@ -10,7 +10,7 @@ import { createServerClient } from '@/lib/supabase/server';
 // 获取报告列表
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -34,14 +34,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 查询报告列表
+    // 查询报告列表（仅查询有效报告）
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
     const { data: reports, error: reportsError, count } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .select('*', { count: 'exact' })
       .eq('UserId', user.id)
+      .eq('Status', 'active')
       .order('CreatedAt', { ascending: false })
       .range(from, to);
 
@@ -58,14 +59,14 @@ export async function GET(request: NextRequest) {
       (reports || []).map(async (report) => {
         // 有效笔记数
         const { count: activeCount } = await supabase
-          .from('report_notes')
+          .from('qiangua_report_note_rel')
           .select('*', { count: 'exact', head: true })
           .eq('ReportId', report.ReportId)
           .eq('Status', 'active');
 
         // 已忽略笔记数
         const { count: ignoredCount } = await supabase
-          .from('report_notes')
+          .from('qiangua_report_note_rel')
           .select('*', { count: 'exact', head: true })
           .eq('ReportId', report.ReportId)
           .eq('Status', 'ignored');
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
 // 创建报告
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -170,10 +171,11 @@ export async function POST(request: NextRequest) {
 
     // 创建报告
     const { data: report, error: reportError } = await supabase
-      .from('reports')
+      .from('qiangua_report')
       .insert({
         UserId: user.id,
         ReportName: reportName,
+        Status: 'active',
       })
       .select()
       .single();
@@ -199,14 +201,17 @@ export async function POST(request: NextRequest) {
       }));
 
       const { error: insertError } = await supabase
-        .from('report_notes')
+        .from('qiangua_report_note_rel')
         .insert(reportNotes)
         .select();
 
       if (insertError) {
         console.error('Error inserting report notes:', insertError);
-        // 如果插入失败，删除已创建的报告
-        await supabase.from('reports').delete().eq('ReportId', report.ReportId);
+        // 如果插入失败，逻辑删除已创建的报告
+        await supabase
+          .from('qiangua_report')
+          .update({ Status: 'hide' })
+          .eq('ReportId', report.ReportId);
         return NextResponse.json(
           { success: false, error: '导入笔记失败' },
           { status: 500 }

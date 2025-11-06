@@ -9,7 +9,7 @@ import { createServerClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerClient();
+    const supabase = createServerClient(request);
     
     // 获取当前用户（验证认证）
     const { data: { user }, error: authError } = await supabase.auth.getUser();
