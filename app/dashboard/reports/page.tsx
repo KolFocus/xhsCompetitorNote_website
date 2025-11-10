@@ -48,6 +48,7 @@ import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
 import CreateReportModal from '@/components/reports/CreateReportModal';
 import AddNotesModal from '@/components/reports/AddNotesModal';
+import BloggerMatrixAnalysis from '@/components/reports/BloggerMatrixAnalysis';
 import { useRouter } from 'next/navigation';
 
 dayjs.locale('zh-cn');
@@ -94,6 +95,8 @@ interface Note {
   commentsCount: number;
   viewCount: number;
   shareCount: number;
+  fans?: number | null;
+  adPrice?: number | null; // 分
   bloggerId: string;
   bloggerNickName: string;
   bloggerSmallAvatar: string | null;
@@ -350,6 +353,11 @@ export default function ReportsPage() {
     }
     return num.toString();
   };
+  const formatPrice = (priceInCents: number | null | undefined): string => {
+    if (priceInCents == null) return '-';
+    const yuan = priceInCents / 100;
+    return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  };
 
   const columns: ColumnsType<Note> = [
     {
@@ -487,6 +495,32 @@ export default function ReportsPage() {
           </Tag>
         );
       },
+    },
+    {
+      title: '粉丝数',
+      dataIndex: 'fans',
+      key: 'fans',
+      width: 110,
+      align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'fans' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('fans', e),
+      }),
+      render: (fans: number | null | undefined) => (fans != null ? fans.toLocaleString() : '-'),
+    },
+    {
+      title: '合作报价',
+      dataIndex: 'adPrice',
+      key: 'adPrice',
+      width: 130,
+      align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'adPrice' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('adPrice', e),
+      }),
+      render: (price: number | null | undefined) => formatPrice(price),
     },
     {
       title: '互动',
@@ -759,6 +793,19 @@ export default function ReportsPage() {
             </Col>
           </Row>
 
+          {/* 达人矩阵属性分析区域 */}
+          {reportId && (
+            <div style={{ marginBottom: 24 }}>
+              <BloggerMatrixAnalysis
+                reportId={reportId}
+                brandId={brandId}
+                bloggerId={bloggerId}
+                startDate={dateRange ? dateRange[0].format('YYYY-MM-DD') : null}
+                endDate={dateRange ? dateRange[1].format('YYYY-MM-DD') : null}
+              />
+            </div>
+          )}
+
           {/* 筛选器区域 */}
           <Card style={{ marginBottom: 24 }}>
             <Row gutter={16}>
@@ -882,6 +929,42 @@ export default function ReportsPage() {
             loading={notesLoading}
             onChange={handleTableChange}
             showSorterTooltip={false}
+            summary={(pageData) => {
+              // 计算总计
+              const totalLiked = pageData.reduce((sum, n) => sum + (n.likedCount || 0), 0);
+              const totalComments = pageData.reduce((sum, n) => sum + (n.commentsCount || 0), 0);
+              const totalViews = pageData.reduce((sum, n) => sum + (n.viewCount || 0), 0);
+              const totalShares = pageData.reduce((sum, n) => sum + (n.shareCount || 0), 0);
+              const totalInteraction = totalLiked + totalComments + totalViews + totalShares;
+              return (
+                <Table.Summary fixed>
+                  <Table.Summary.Row>
+                    <Table.Summary.Cell index={0} colSpan={4}>
+                      <span style={{ fontWeight: 600 }}>总计</span>
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={4} />
+                    <Table.Summary.Cell index={5} />
+                    <Table.Summary.Cell index={6} align="right">
+                      {formatNumber(totalInteraction)}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={7} align="right">
+                      {formatNumber(totalLiked)}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={8} align="right">
+                      {formatNumber(totalViews)}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={9} align="right">
+                      {formatNumber(totalComments)}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={10} align="right">
+                      {formatNumber(totalShares)}
+                    </Table.Summary.Cell>
+                    <Table.Summary.Cell index={11} />
+                    <Table.Summary.Cell index={12} />
+                  </Table.Summary.Row>
+                </Table.Summary>
+              );
+            }}
             rowSelection={{
               selectedRowKeys: selectedNoteIds,
               onChange: (keys) => setSelectedNoteIds(keys as string[]),

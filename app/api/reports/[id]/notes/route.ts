@@ -77,6 +77,7 @@ export async function GET(
           IsBusiness,
           IsAdNote,
           PublishTime,
+          PubDate,
           LikedCount,
           CollectedCount,
           CommentsCount,
@@ -89,7 +90,9 @@ export async function GET(
           BrandId,
           BrandIdKey,
           BrandName,
-          VideoDuration
+          VideoDuration,
+          Fans,
+          AdPrice
         )
       `, { count: 'exact' })
       .eq('ReportId', reportId)
@@ -148,6 +151,8 @@ export async function GET(
           commentsCount: note.CommentsCount,
           viewCount: note.ViewCount,
           shareCount: note.ShareCount,
+          fans: note.Fans ?? null,
+          adPrice: note.AdPrice ?? null,
           bloggerId: note.BloggerId,
           bloggerNickName: note.BloggerNickName,
           bloggerSmallAvatar: note.SmallAvatar,
@@ -169,6 +174,8 @@ export async function GET(
       'viewcount': 'viewCount',
       'commentscount': 'commentsCount',
       'sharecount': 'shareCount',
+      'fans': 'fans',
+      'adprice': 'adPrice',
     };
     const mappedField = fieldMap[orderBy.toLowerCase()] || orderBy.toLowerCase();
     notes.sort((a: any, b: any) => {

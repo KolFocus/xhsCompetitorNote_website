@@ -96,6 +96,8 @@ interface Note {
   BrandName: string | null;
   VideoDuration: string | null;
   CurrentUserIsFavorite: boolean;
+  Fans?: number | null;
+  AdPrice?: number | null; // 单位：分
 }
 
 interface Brand {
@@ -328,6 +330,11 @@ export default function NotesPage() {
     }
     return num.toString();
   };
+  const formatPrice = (priceInCents: number | null | undefined): string => {
+    if (priceInCents == null) return '-';
+    const yuan = priceInCents / 100;
+    return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  };
 
   // 定义表格列
   const columns: ColumnsType<Note> = [
@@ -466,6 +473,32 @@ export default function NotesPage() {
           </Tag>
         );
       },
+    },
+    {
+      title: '粉丝数',
+      dataIndex: 'Fans',
+      key: 'Fans',
+      width: 110,
+      align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'Fans' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('Fans', e),
+      }),
+      render: (fans: number | null | undefined) => (fans != null ? fans.toLocaleString() : '-'),
+    },
+    {
+      title: '合作报价',
+      dataIndex: 'AdPrice',
+      key: 'AdPrice',
+      width: 130,
+      align: 'right',
+      sorter: true,
+      sortOrder: sortField === 'AdPrice' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      onHeaderCell: () => ({
+        onClick: (e: React.MouseEvent) => handleSortClick('AdPrice', e),
+      }),
+      render: (price: number | null | undefined) => formatPrice(price),
     },
     {
       title: '互动',
