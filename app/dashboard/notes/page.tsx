@@ -333,7 +333,7 @@ export default function NotesPage() {
   };
   const formatPrice = (priceInCents: number | null | undefined): string => {
     if (priceInCents == null) return '-';
-    const yuan = priceInCents / 100;
+    const yuan = priceInCents;
     return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
 
