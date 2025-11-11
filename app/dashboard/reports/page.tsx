@@ -570,9 +570,8 @@ export default function ReportsPage() {
       render: (_: any, record: Note) =>
         formatNumber(
           record.likedCount +
-            record.viewCount +
             record.commentsCount +
-            record.shareCount
+            (record as any).collectedCount
         ),
     },
     {
@@ -594,22 +593,17 @@ export default function ReportsPage() {
       ),
     },
     {
-      title: '浏览',
-      dataIndex: 'viewCount',
-      key: 'viewCount',
+      title: '收藏',
+      dataIndex: 'collectedCount',
+      key: 'collectedCount',
       width: 80,
       align: 'right',
       sorter: true,
-      sortOrder: sortField === 'viewCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sortField === 'collectedCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
       onHeaderCell: () => ({
-        onClick: (e: React.MouseEvent) => handleSortClick('viewCount', e),
+        onClick: (e: React.MouseEvent) => handleSortClick('collectedCount', e),
       }),
-      render: (count: number) => (
-        <Space size="small">
-          <EyeOutlined />
-          {formatNumber(count)}
-        </Space>
-      ),
+      render: (count: number) => formatNumber(count),
     },
     {
       title: '评论',
@@ -972,9 +966,9 @@ export default function ReportsPage() {
               // 计算总计
               const totalLiked = pageData.reduce((sum, n) => sum + (n.likedCount || 0), 0);
               const totalComments = pageData.reduce((sum, n) => sum + (n.commentsCount || 0), 0);
-              const totalViews = pageData.reduce((sum, n) => sum + (n.viewCount || 0), 0);
+              const totalCollected = pageData.reduce((sum, n) => sum + ((n as any).collectedCount || 0), 0);
               const totalShares = pageData.reduce((sum, n) => sum + (n.shareCount || 0), 0);
-              const totalInteraction = totalLiked + totalComments + totalViews + totalShares;
+              const totalInteraction = totalLiked + totalComments + totalCollected;
               return (
                 <Table.Summary fixed>
                   <Table.Summary.Row>
@@ -990,7 +984,7 @@ export default function ReportsPage() {
                       {formatNumber(totalLiked)}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={8} align="right">
-                      {formatNumber(totalViews)}
+                      {formatNumber(totalCollected)}
                     </Table.Summary.Cell>
                     <Table.Summary.Cell index={9} align="right">
                       {formatNumber(totalComments)}

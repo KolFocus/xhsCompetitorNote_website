@@ -343,6 +343,7 @@ export default function NotesPage() {
       title: '封面',
       dataIndex: 'CoverImage',
       key: 'CoverImage',
+      fixed: 'left',
       width: 100,
       render: (image: string | null, record: Note) => (
         <div style={{ 
@@ -388,6 +389,7 @@ export default function NotesPage() {
       dataIndex: 'Title',
       key: 'Title',
       width: 300,
+      fixed: 'left',
       ellipsis: true,
       render: (text: string, record: Note) => {
         const content = record.Content?.trim() || '';
@@ -538,7 +540,7 @@ export default function NotesPage() {
       width: 100,
       align: 'right',
       render: (_: any, record: Note) => {
-        const total = record.LikedCount + record.ViewCount + record.CommentsCount + record.ShareCount;
+        const total = record.LikedCount + record.CommentsCount + record.CollectedCount;
         return formatNumber(total);
       },
     },
@@ -561,22 +563,17 @@ export default function NotesPage() {
       ),
     },
     {
-      title: '浏览',
-      dataIndex: 'ViewCount',
-      key: 'ViewCount',
+      title: '收藏',
+      dataIndex: 'CollectedCount',
+      key: 'CollectedCount',
       width: 80,
       align: 'right',
       sorter: true,
-      sortOrder: sortField === 'ViewCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
+      sortOrder: sortField === 'CollectedCount' ? (sortOrder === 'asc' ? 'ascend' : 'descend') : null,
       onHeaderCell: () => ({
-        onClick: (e: React.MouseEvent) => handleSortClick('ViewCount', e),
+        onClick: (e: React.MouseEvent) => handleSortClick('CollectedCount', e),
       }),
-      render: (count: number) => (
-        <Space size="small">
-          <EyeOutlined />
-          {formatNumber(count)}
-        </Space>
-      ),
+      render: (count: number) => formatNumber(count),
     },
     {
       title: '评论',

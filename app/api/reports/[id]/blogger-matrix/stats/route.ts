@@ -17,10 +17,28 @@ interface NoteInfoRecord {
   ViewCount: number | null;
   ShareCount: number | null;
   AdPrice: number | null;
+  // detail fields used by note list
+  NoteId?: string;
+  Title?: string | null;
+  Content?: string | null;
+  CoverImage?: string | null;
+  NoteType?: string | null;
+  IsBusiness?: boolean | null;
+  IsAdNote?: boolean | null;
+  PublishTime?: string | null;
+  BloggerNickName?: string | null;
+  SmallAvatar?: string | null;
+  BigAvatar?: string | null;
+  BrandId?: string | null;
+  BrandIdKey?: string | null;
+  BrandName?: string | null;
+  VideoDuration?: string | null;
 }
 
 interface NoteRelation {
   qiangua_note_info: NoteInfoRecord | null;
+  Status?: string;
+  CreatedAt?: string;
 }
 
 interface LevelStat {
@@ -107,8 +125,21 @@ export async function GET(
     const { data: notesData, error: notesError } = await supabase
       .from('qiangua_report_note_rel')
       .select(`
+        Status,
+        CreatedAt,
         qiangua_note_info (
+          NoteId,
+          Title,
+          Content,
+          CoverImage,
+          NoteType,
+          IsBusiness,
+          IsAdNote,
+          PublishTime,
           BloggerId,
+          BloggerNickName,
+          SmallAvatar,
+          BigAvatar,
           OfficialVerified,
           Fans,
           LikedCount,
@@ -116,7 +147,11 @@ export async function GET(
           CommentsCount,
           ViewCount,
           ShareCount,
-          AdPrice
+          AdPrice,
+          BrandId,
+          BrandIdKey,
+          BrandName,
+          VideoDuration
         )
       `)
       .eq('ReportId', reportId)
@@ -137,6 +172,8 @@ export async function GET(
             : rel?.qiangua_note_info;
           return {
             qiangua_note_info: info ?? null,
+            Status: rel?.Status,
+            CreatedAt: rel?.CreatedAt,
           };
         })
       : [];
@@ -176,37 +213,37 @@ export async function GET(
       }>;
     }>();
 
-    for (const rel of filteredNotes) {
-      const noteInfo = rel.qiangua_note_info;
-      const bloggerId = noteInfo.BloggerId;
-      const isVerified = Boolean(noteInfo.OfficialVerified);
-      const fansFromNote = Number(noteInfo.Fans) || 0;
+      for (const rel of filteredNotes) {
+        const noteInfo = rel.qiangua_note_info;
+        const bloggerId = noteInfo.BloggerId;
+        const isVerified = Boolean(noteInfo.OfficialVerified);
+        const fansFromNote = Number(noteInfo.Fans) || 0;
 
-      if (!bloggerMap.has(bloggerId)) {
-        bloggerMap.set(bloggerId, {
-          bloggerId,
-          officialVerified: isVerified,
-          fansCount: fansFromNote,
-          notes: [],
-        });
-      }
+        if (!bloggerMap.has(bloggerId)) {
+          bloggerMap.set(bloggerId, {
+            bloggerId,
+            officialVerified: isVerified,
+            fansCount: fansFromNote,
+            notes: [],
+          });
+        }
 
-      const blogger = bloggerMap.get(bloggerId)!;
-      // 如果任何一条笔记显示为官方认证，则该达人视为KOL
-      if (isVerified) {
-        blogger.officialVerified = true;
-      }
-      // 取该达人在多条笔记中的最大粉丝数，防止偶发低值覆盖
-      if (fansFromNote > blogger.fansCount) {
-        blogger.fansCount = fansFromNote;
-      }
-      blogger.notes.push({
-        likedCount: noteInfo.LikedCount || 0,
-        collectedCount: noteInfo.CollectedCount || 0,
-        commentsCount: noteInfo.CommentsCount || 0,
-        shareCount: noteInfo.ShareCount || 0,
+        const blogger = bloggerMap.get(bloggerId)!;
+        // 如果任何一条笔记显示为官方认证，则该达人视为KOL
+        if (isVerified) {
+          blogger.officialVerified = true;
+        }
+        // 取该达人在多条笔记中的最大粉丝数，防止偶发低值覆盖
+        if (fansFromNote > blogger.fansCount) {
+          blogger.fansCount = fansFromNote;
+        }
+        blogger.notes.push({
+          likedCount: noteInfo.LikedCount || 0,
+          collectedCount: noteInfo.CollectedCount || 0,
+          commentsCount: noteInfo.CommentsCount || 0,
+          shareCount: noteInfo.ShareCount || 0,
         adPrice: noteInfo.AdPrice || 0,
-      });
+        });
     }
 
     // 先计算KOL（官方认证达人），后续层级需排除这些达人
@@ -399,10 +436,62 @@ export async function GET(
       totalRow,
     ];
 
+    // 生成 details：参与统计的完整笔记集合（无分页），首列为层级名称（含KOL）
+    const computeLevelName = (note: NoteInfoRecord): string => {
+      // KOL 优先
+      if (note.OfficialVerified) return '知名KOL';
+      const fans = Number(note.Fans) || 0;
+      for (const level of customLevels) {
+        const minFans = level.minFans || 0;
+        const maxFans = level.maxFans;
+        if (maxFans === null) {
+          if (fans >= minFans) return level.levelName;
+        } else {
+          if (fans >= minFans && fans < maxFans) return level.levelName;
+        }
+      }
+      // 若未命中，默认归入最小层级名称
+      return customLevels[customLevels.length - 1]?.levelName || '未分层';
+    };
+
+    const details = filteredNotes.map((rel) => {
+      const note = rel.qiangua_note_info!;
+      return {
+        levelName: computeLevelName(note),
+        noteId: note.NoteId,
+        title: note.Title,
+        content: note.Content,
+        coverImage: note.CoverImage,
+        noteType: note.NoteType,
+        isBusiness: note.IsBusiness,
+        isAdNote: note.IsAdNote,
+        publishTime: note.PublishTime,
+        likedCount: note.LikedCount,
+        collectedCount: note.CollectedCount,
+        commentsCount: note.CommentsCount,
+        viewCount: note.ViewCount,
+        shareCount: note.ShareCount,
+        fans: note.Fans ?? null,
+        adPrice: note.AdPrice ?? null,
+        bloggerId: note.BloggerId,
+        bloggerNickName: note.BloggerNickName,
+        bloggerSmallAvatar: note.SmallAvatar,
+        bloggerBigAvatar: note.BigAvatar,
+        officialVerified: note.OfficialVerified ?? null,
+        brandId: note.BrandId,
+        brandIdKey: note.BrandIdKey,
+        brandName: note.BrandName,
+        videoDuration: note.VideoDuration,
+        status: rel.Status,
+        addedAt: rel.CreatedAt,
+      };
+    });
+
     return NextResponse.json({
       success: true,
       data: {
         rows,
+        details,
       },
     });
   } catch (error: any) {

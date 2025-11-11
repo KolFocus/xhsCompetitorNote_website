@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import BloggerMatrixConfigModal from './BloggerMatrixConfigModal';
+// XLSX 将在导出时动态导入，避免类型依赖问题
 
 const { Title } = Typography;
 
@@ -100,6 +101,174 @@ export default function BloggerMatrixAnalysis({
     } catch (error) {
       setStats([]);
       message.error('加载统计数据失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const slugify = (name: string): string => {
+    return (name || '')
+      .replace(/[\\/:*?"<>|]/g, '')
+      .replace(/\s+/g, '_')
+      .slice(0, 80);
+  };
+
+  const getReportName = async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/reports`);
+      const data = await res.json();
+      if (!data?.success) return null;
+      const list: Array<{ reportId: string; reportName: string }> = data.data?.list || [];
+      const found = list.find((r) => r.reportId === reportId);
+      return found?.reportName || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatFansRange = (minFans: number, maxFans: number | null): string => {
+    const toText = (n: number) => {
+      if (n >= 100000000) return `${(n / 100000000).toFixed(1)}亿`;
+      if (n >= 10000) return `${(n / 10000).toFixed(1)}万`;
+      return `${n}`;
+    };
+    const minText = toText(minFans >= 0 ? minFans : 0);
+    const maxText = maxFans !== null ? toText(maxFans) : '+';
+    return maxFans !== null ? `${minText}-${maxText}` : `${minText}+`;
+  };
+
+  const handleExport = async () => {
+    try {
+      setLoading(true);
+      // @ts-ignore 动态引入，无类型声明也可运行
+      const XLSX: any = await import('xlsx');
+      // 重新获取，包含 details
+      const res = await fetch(`/api/reports/${reportId}/blogger-matrix/stats`);
+      const json = await res.json();
+      if (!json?.success) {
+        message.error(json?.error || '导出失败：统计数据获取异常');
+        return;
+      }
+      const rows: LevelStats[] = json.data?.rows || [];
+      const details: any[] = json.data?.details || [];
+
+      // 汇总 sheet
+      // 按页面“列表展示”的字段顺序导出
+      const summaryHeader = [
+        '层级名称',
+        '粉丝区间',
+        '达人数量',
+        '达人占比%',
+        '笔记数量',
+        '笔记占比%',
+        '平均粉丝数',
+        '投放金额',
+        '投放金额占比%',
+        '笔记单价（元/笔记）',
+        '总互动量',
+        '总互动量占比%',
+        '点赞',
+        '点赞占比%',
+        '收藏',
+        '收藏占比%',
+        '评论',
+        '评论占比%',
+        '分享',
+        '分享占比%',
+      ];
+      const summaryData = rows.map((r) => ({
+        层级名称: r.levelName,
+        粉丝区间: formatFansRange(r.minFans, r.maxFans),
+        达人数量: r.bloggerCount,
+        '达人占比%': Number.isFinite(r.bloggerPercentage) ? Number(r.bloggerPercentage.toFixed(2)) + '%' : '0.00%',
+        笔记数量: r.notesCount,
+        '笔记占比%': Number.isFinite(r.notesPercentage) ? Number(r.notesPercentage.toFixed(2)) + '%' : '0.00%',
+        平均粉丝数: r.avgFans,
+        投放金额: r.totalAdPrice,
+        '投放金额占比%': Number.isFinite(r.totalAdPricePercentage) ? Number(r.totalAdPricePercentage.toFixed(2)) + '%' : '0.00%',
+        '笔记单价（元/笔记）': Number.isFinite(r.adPricePerNote) ? Number(r.adPricePerNote) : 0,
+        总互动量: r.totalInteraction,
+        '总互动量占比%': Number.isFinite(r.totalInteractionPercentage) ? Number(r.totalInteractionPercentage.toFixed(2)) + '%' : '0.00%',
+        点赞: r.totalLiked,
+        '点赞占比%': Number.isFinite(r.totalLikedPercentage) ? Number(r.totalLikedPercentage.toFixed(2)) + '%' : '0.00%',
+        收藏: r.totalCollected,
+        '收藏占比%': Number.isFinite(r.totalCollectedPercentage) ? Number(r.totalCollectedPercentage.toFixed(2)) + '%' : '0.00%',
+        评论: r.totalComments,
+        '评论占比%': Number.isFinite(r.totalCommentsPercentage) ? Number(r.totalCommentsPercentage.toFixed(2)) + '%' : '0.00%',
+        分享: r.totalShares,
+        '分享占比%': Number.isFinite(r.totalSharesPercentage) ? Number(r.totalSharesPercentage.toFixed(2)) + '%' : '0.00%',
+      }));
+      const wsSummary = XLSX.utils.json_to_sheet(summaryData, { header: summaryHeader });
+
+      // 明细 sheet：首列层级名称，其余字段与笔记列表一致
+      // 移除不需要导出的字段，并使用中文表头；publishTime 格式化为 YYYY-MM-DD HH:mm:ss（不做时区换算）
+      const detailKeepOrder: Array<{ key: string; label: string; format?: (v: any) => any }> = [
+        { key: 'noteId', label: '笔记ID' },
+        { key: 'title', label: '标题' },
+        { key: 'content', label: '文本内容' },
+        { key: 'coverImage', label: '封面' },
+        { key: 'noteType', label: '笔记类型' },
+        {
+          key: 'publishTime',
+          label: '发布时间',
+          format: (v: any) => {
+            if (!v || typeof v !== 'string') return v ?? '';
+            // 例：2025-10-30T08:13:42+00:00 -> 2025-10-30 08:13:42
+            const match = v.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+            if (match) return `${match[1]} ${match[2]}`;
+            // 尝试 Date 解析后按本地时间格式化
+            try {
+              const dt = new Date(v);
+              const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+              return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+            } catch {
+              return v;
+            }
+          },
+        },
+        { key: 'likedCount', label: '点赞' },
+        { key: 'collectedCount', label: '收藏' },
+        { key: 'commentsCount', label: '评论' },
+        { key: 'viewCount', label: '浏览' },
+        { key: 'shareCount', label: '分享' },
+        { key: 'fans', label: '粉丝数' },
+        { key: 'adPrice', label: '投放金额' },
+        { key: 'bloggerId', label: '达人ID' },
+        { key: 'bloggerNickName', label: '达人昵称' },
+        { key: 'bloggerSmallAvatar', label: '头像(小)' },
+        { key: 'bloggerBigAvatar', label: '头像(大)' },
+        { key: 'brandName', label: '品牌' },
+        { key: 'videoDuration', label: '视频时长(秒)' },
+      ];
+      const detailHeader = ['层级名称', ...detailKeepOrder.map((i) => i.label)];
+      const detailsData = details.map((d: any) => {
+        const row: Record<string, any> = { 层级名称: d.levelName };
+        for (const item of detailKeepOrder) {
+          const raw = d[item.key];
+          row[item.label] = item.format ? item.format(raw) : raw;
+        }
+        return row;
+      });
+      const wsDetails = XLSX.utils.json_to_sheet(detailsData, { header: detailHeader });
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsSummary, '汇总');
+      XLSX.utils.book_append_sheet(wb, wsDetails, '明细');
+
+      // 文件名：报告名优先，否则使用 reportId；时间戳使用 Asia/Shanghai
+      const name = (await getReportName()) || '';
+      const slug = name ? slugify(name) : `report-${reportId}`;
+      // 生成 Asia/Shanghai 时间戳
+      const now = new Date();
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const shanghaiDate = new Date(utcMs + 8 * 60 * 60000);
+      const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+      const ts = `${shanghaiDate.getFullYear()}${pad(shanghaiDate.getMonth() + 1)}${pad(shanghaiDate.getDate())}-${pad(shanghaiDate.getHours())}${pad(shanghaiDate.getMinutes())}${pad(shanghaiDate.getSeconds())}`;
+      const filename = `${slug}_达人矩阵_汇总明细_${ts}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+    } catch (e) {
+      message.error('导出失败，请稍后重试');
     } finally {
       setLoading(false);
     }
@@ -330,12 +499,17 @@ export default function BloggerMatrixAnalysis({
           </Space>
         }
         extra={
-          <Button
-            icon={<SettingOutlined />}
-            onClick={() => setConfigModalVisible(true)}
-          >
-            配置
-          </Button>
+          <Space>
+            <Button onClick={handleExport}>
+              导出Excel
+            </Button>
+            <Button
+              icon={<SettingOutlined />}
+              onClick={() => setConfigModalVisible(true)}
+            >
+              配置
+            </Button>
+          </Space>
         }
       >
         <Spin spinning={loading}>
