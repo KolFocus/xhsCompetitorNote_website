@@ -7,32 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
-
-// 默认配置
-const DEFAULT_CONFIG = {
-  customLevels: [
-    {
-      levelName: '头部达人',
-      minFans: 500000, // 50万
-      maxFans: null,
-    },
-    {
-      levelName: '腰部达人',
-      minFans: 100000, // 10万
-      maxFans: 500000, // 50万
-    },
-    {
-      levelName: '初级达人',
-      minFans: 10000, // 1万
-      maxFans: 100000, // 10万
-    },
-    {
-      levelName: '新手达人',
-      minFans: 0,
-      maxFans: 10000, // 1万
-    },
-  ],
-};
+import { DEFAULT_BLOGGER_LEVELS } from '@/lib/constants/bloggerMatrix';
 
 // 验证配置
 function validateConfig(customLevels: any[]): string | null {

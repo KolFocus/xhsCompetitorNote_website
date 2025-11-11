@@ -15,6 +15,7 @@ import {
   Typography,
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, ExclamationCircleFilled } from '@ant-design/icons';
+import { DEFAULT_BLOGGER_LEVELS } from '@/lib/constants/bloggerMatrix';
 
 const { Title, Text } = Typography;
 
@@ -31,13 +32,6 @@ interface BloggerMatrixConfigModalProps {
   onCancel: () => void;
   onSuccess: () => void;
 }
-
-const DEFAULT_LEVELS: Level[] = [
-  { levelName: '头部达人', minFans: 500000, maxFans: null },
-  { levelName: '腰部达人', minFans: 100000, maxFans: 500000 },
-  { levelName: '初级达人', minFans: 10000, maxFans: 100000 },
-  { levelName: '新手达人', minFans: 0, maxFans: 10000 },
-];
 
 export default function BloggerMatrixConfigModal({ open, reportId, onCancel, onSuccess }: BloggerMatrixConfigModalProps) {
   const [form] = Form.useForm();
@@ -60,7 +54,7 @@ export default function BloggerMatrixConfigModal({ open, reportId, onCancel, onS
       if (data.success) {
         const levels: Level[] = data?.data?.customLevels && data.data.customLevels.length > 0
           ? data.data.customLevels
-          : DEFAULT_LEVELS.map((lvl, idx) => ({ ...lvl, levelId: String(idx + 1) }));
+          : DEFAULT_BLOGGER_LEVELS.map((lvl, idx) => ({ ...lvl, levelId: String(idx + 1) }));
         setInitialLevels(levels);
         form.setFieldsValue({ levels });
       } else {
@@ -149,7 +143,7 @@ export default function BloggerMatrixConfigModal({ open, reportId, onCancel, onS
   };
 
   const handleReset = () => {
-    const levels = DEFAULT_LEVELS.map((level, index) => ({ ...level, levelId: String(index + 1) }));
+    const levels = DEFAULT_BLOGGER_LEVELS.map((level, index) => ({ ...level, levelId: String(index + 1) }));
     form.setFieldsValue({ levels });
   };
 

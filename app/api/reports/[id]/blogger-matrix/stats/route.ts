@@ -5,6 +5,68 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { DEFAULT_BLOGGER_LEVELS_WITH_ID } from '@/lib/constants/bloggerMatrix';
+
+interface NoteInfoRecord {
+  BloggerId: string;
+  OfficialVerified: boolean | null;
+  Fans: number | null;
+  LikedCount: number | null;
+  CollectedCount: number | null;
+  CommentsCount: number | null;
+  ViewCount: number | null;
+  ShareCount: number | null;
+  AdPrice: number | null;
+}
+
+interface NoteRelation {
+  qiangua_note_info: NoteInfoRecord | null;
+}
+
+interface LevelStat {
+  levelId: string;
+  levelName: string;
+  minFans: number;
+  maxFans: number | null;
+  bloggerCount: number;
+  bloggerPercentage: number;
+  avgFans: number;
+  totalInteraction: number;
+  totalLiked: number;
+  totalCollected: number;
+  totalComments: number;
+  totalShares: number;
+  totalAdPrice: number;
+  adPricePerNote: number;
+  notesCount: number;
+}
+
+interface LevelStatPercentages {
+  notesPercentage: number;
+  totalInteractionPercentage: number;
+  totalLikedPercentage: number;
+  totalCollectedPercentage: number;
+  totalCommentsPercentage: number;
+  totalSharesPercentage: number;
+  totalAdPricePercentage: number;
+}
+
+type LevelStatWithPercentages = LevelStat & LevelStatPercentages;
+
+interface TotalsBase {
+  notesCount: number;
+  totalInteraction: number;
+  totalLiked: number;
+  totalCollected: number;
+  totalComments: number;
+  totalShares: number;
+  totalAdPrice: number;
+}
+
+interface AggregatedTotals extends TotalsBase {
+  bloggerCount: number;
+  avgFansWeighted: number;
+}
 
 export async function GET(
   request: NextRequest,
@@ -40,21 +102,12 @@ export async function GET(
       );
     }
 
-    // 获取筛选参数（可选）
-    const { searchParams } = new URL(request.url);
-    const brandId = searchParams.get('brandId');
-    const bloggerId = searchParams.get('bloggerId');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
-
-    // 构建查询：获取报告中的有效笔记及其博主信息
-    // 先查询符合条件的笔记ID
-    let notesQuery = supabase
+    // 构建查询：获取报告中的所有有效笔记及其博主信息
+    // 达人矩阵分析基于整个报告的有效笔记全集，不受筛选条件影响
+    const { data: notesData, error: notesError } = await supabase
       .from('qiangua_report_note_rel')
       .select(`
-        NoteId,
         qiangua_note_info (
-          NoteId,
           BloggerId,
           OfficialVerified,
           Fans,
@@ -63,14 +116,11 @@ export async function GET(
           CommentsCount,
           ViewCount,
           ShareCount,
-          PublishTime,
-          BrandId
+          AdPrice
         )
       `)
       .eq('ReportId', reportId)
       .eq('Status', 'active');
-
-    const { data: notesData, error: notesError } = await notesQuery;
 
     if (notesError) {
       console.error('Error fetching notes:', notesError);
@@ -79,21 +129,21 @@ export async function GET(
         { status: 500 }
       );
     }
-
-    // 在内存中应用筛选条件
-    let filteredNotes = (notesData || []).filter((rel: any) => {
-      const noteInfo = rel.qiangua_note_info;
-      if (!noteInfo) return false;
-
-      if (brandId && noteInfo.BrandId !== brandId) return false;
-      if (bloggerId && noteInfo.BloggerId !== bloggerId) return false;
-      if (startDate && noteInfo.PublishTime < startDate) return false;
-      if (endDate && noteInfo.PublishTime > endDate) return false;
-
-      return true;
-    });
-
-    // 直接使用笔记表中的 Fans 字段进行统计（避免依赖可能缺失的 blogger 表）
+    // 过滤掉没有笔记信息的记录
+    const rawNotes: NoteRelation[] = Array.isArray(notesData)
+      ? (notesData as any[]).map((rel) => {
+          const info = Array.isArray(rel?.qiangua_note_info)
+            ? rel.qiangua_note_info[0]
+            : rel?.qiangua_note_info;
+          return {
+            qiangua_note_info: info ?? null,
+          };
+        })
+      : [];
+    const filteredNotes = rawNotes.filter(
+      (rel): rel is NoteRelation & { qiangua_note_info: NoteInfoRecord } =>
+        rel.qiangua_note_info != null
+    );
 
     // 获取配置（如果没有配置，使用默认配置）
     // 实际分层配置存储在 qiangua_report.CustomLevels (JSON)
@@ -107,38 +157,10 @@ export async function GET(
       console.warn('Warning: Failed to load CustomLevels from qiangua_report:', matrixError.message);
     }
 
-    // 默认配置
-    const defaultLevels = [
-      {
-        levelId: '1',
-        levelName: '头部达人',
-        minFans: 500000,
-        maxFans: null,
-      },
-      {
-        levelId: '2',
-        levelName: '腰部达人',
-        minFans: 100000,
-        maxFans: 500000,
-      },
-      {
-        levelId: '3',
-        levelName: '初级达人',
-        minFans: 10000,
-        maxFans: 100000,
-      },
-      {
-        levelId: '4',
-        levelName: '新手达人',
-        minFans: 0,
-        maxFans: 10000,
-      },
-    ];
-
     // 直接从 qiangua_report.CustomLevels 读取分层
     const customLevels = Array.isArray(matrixRow?.CustomLevels)
       ? matrixRow!.CustomLevels
-      : defaultLevels;
+      : DEFAULT_BLOGGER_LEVELS_WITH_ID;
 
     // 处理数据：按博主分组统计
     const bloggerMap = new Map<string, {
@@ -149,46 +171,42 @@ export async function GET(
         likedCount: number;
         collectedCount: number;
         commentsCount: number;
-        viewCount: number;
         shareCount: number;
+        adPrice: number;
       }>;
     }>();
 
-    if (filteredNotes) {
-      for (const rel of filteredNotes) {
-        const noteInfo = rel.qiangua_note_info;
-        if (!noteInfo) continue;
+    for (const rel of filteredNotes) {
+      const noteInfo = rel.qiangua_note_info;
+      const bloggerId = noteInfo.BloggerId;
+      const isVerified = Boolean(noteInfo.OfficialVerified);
+      const fansFromNote = Number(noteInfo.Fans) || 0;
 
-        const bloggerId = noteInfo.BloggerId;
-        const isVerified = Boolean(noteInfo.OfficialVerified);
-        const fansFromNote = Number(noteInfo.Fans) || 0;
-
-        if (!bloggerMap.has(bloggerId)) {
-          bloggerMap.set(bloggerId, {
-            bloggerId,
-            officialVerified: isVerified,
-            fansCount: fansFromNote,
-            notes: [],
-          });
-        }
-
-        const blogger = bloggerMap.get(bloggerId)!;
-        // 如果任何一条笔记显示为官方认证，则该达人视为KOL
-        if (isVerified) {
-          blogger.officialVerified = true;
-        }
-        // 取该达人在多条笔记中的最大粉丝数，防止偶发低值覆盖
-        if (fansFromNote > blogger.fansCount) {
-          blogger.fansCount = fansFromNote;
-        }
-        blogger.notes.push({
-          likedCount: noteInfo.LikedCount || 0,
-          collectedCount: noteInfo.CollectedCount || 0,
-          commentsCount: noteInfo.CommentsCount || 0,
-          viewCount: noteInfo.ViewCount || 0,
-          shareCount: noteInfo.ShareCount || 0,
+      if (!bloggerMap.has(bloggerId)) {
+        bloggerMap.set(bloggerId, {
+          bloggerId,
+          officialVerified: isVerified,
+          fansCount: fansFromNote,
+          notes: [],
         });
       }
+
+      const blogger = bloggerMap.get(bloggerId)!;
+      // 如果任何一条笔记显示为官方认证，则该达人视为KOL
+      if (isVerified) {
+        blogger.officialVerified = true;
+      }
+      // 取该达人在多条笔记中的最大粉丝数，防止偶发低值覆盖
+      if (fansFromNote > blogger.fansCount) {
+        blogger.fansCount = fansFromNote;
+      }
+      blogger.notes.push({
+        likedCount: noteInfo.LikedCount || 0,
+        collectedCount: noteInfo.CollectedCount || 0,
+        commentsCount: noteInfo.CommentsCount || 0,
+        shareCount: noteInfo.ShareCount || 0,
+        adPrice: noteInfo.AdPrice || 0,
+      });
     }
 
     // 先计算KOL（官方认证达人），后续层级需排除这些达人
@@ -198,22 +216,7 @@ export async function GET(
     const kolBloggerIds = new Set(kolBloggers.map((b) => b.bloggerId));
 
     // 按层级分组统计（排除KOL达人）
-    const levelStats: Array<{
-      levelId: string;
-      levelName: string;
-      minFans: number;
-      maxFans: number | null;
-      bloggerCount: number;
-      bloggerPercentage: number;
-      avgFans: number;
-      totalInteraction: number;
-      totalLiked: number;
-      totalCollected: number;
-      totalComments: number;
-      totalViews: number;
-      totalShares: number;
-      notesCount: number;
-    }> = [];
+    const levelStats: LevelStat[] = [];
 
     const totalBloggers = bloggerMap.size;
 
@@ -231,13 +234,12 @@ export async function GET(
         return fans >= minFans && fans < maxFans;
       });
 
-      const levelBloggerIds = new Set(levelBloggers.map((b) => b.bloggerId));
       let totalInteraction = 0;
       let totalLiked = 0;
       let totalCollected = 0;
       let totalComments = 0;
-      let totalViews = 0;
       let totalShares = 0;
+      let totalAdPrice = 0;
       let notesCount = 0;
       let totalFans = 0;
 
@@ -248,12 +250,13 @@ export async function GET(
           totalLiked += note.likedCount;
           totalCollected += note.collectedCount;
           totalComments += note.commentsCount;
-          totalViews += note.viewCount;
           totalShares += note.shareCount;
+          totalAdPrice += note.adPrice;
         }
       }
 
-      totalInteraction = totalLiked + totalCollected + totalComments + totalViews + totalShares;
+      // 互动量 = 点赞 + 收藏 + 评论
+      totalInteraction = totalLiked + totalCollected + totalComments;
 
       levelStats.push({
         levelId: level.levelId,
@@ -267,8 +270,9 @@ export async function GET(
         totalLiked,
         totalCollected,
         totalComments,
-        totalViews,
         totalShares,
+        totalAdPrice,
+        adPricePerNote: notesCount > 0 ? totalAdPrice / notesCount : 0,
         notesCount,
       });
     }
@@ -277,8 +281,8 @@ export async function GET(
     let kolTotalLiked = 0;
     let kolTotalCollected = 0;
     let kolTotalComments = 0;
-    let kolTotalViews = 0;
     let kolTotalShares = 0;
+    let kolTotalAdPrice = 0;
     let kolNotesCount = 0;
     let kolTotalFans = 0;
 
@@ -289,14 +293,15 @@ export async function GET(
         kolTotalLiked += note.likedCount;
         kolTotalCollected += note.collectedCount;
         kolTotalComments += note.commentsCount;
-        kolTotalViews += note.viewCount;
         kolTotalShares += note.shareCount;
+        kolTotalAdPrice += note.adPrice;
       }
     }
 
-    kolTotalInteraction = kolTotalLiked + kolTotalCollected + kolTotalComments + kolTotalViews + kolTotalShares;
+    // 互动量 = 点赞 + 收藏 + 评论
+    kolTotalInteraction = kolTotalLiked + kolTotalCollected + kolTotalComments;
 
-    const kolStats = {
+    const kolStats: LevelStat = {
       levelId: 'kol',
       levelName: '知名KOL',
       minFans: 0,
@@ -308,17 +313,96 @@ export async function GET(
       totalLiked: kolTotalLiked,
       totalCollected: kolTotalCollected,
       totalComments: kolTotalComments,
-      totalViews: kolTotalViews,
       totalShares: kolTotalShares,
+      totalAdPrice: kolTotalAdPrice,
+      adPricePerNote: kolNotesCount > 0 ? kolTotalAdPrice / kolNotesCount : 0,
       notesCount: kolNotesCount,
     };
 
-    // 返回统计数据（知名KOL层在最前面）
+    const sumField = (list: Array<Record<string, any>>, key: string): number =>
+      list.reduce((acc, item) => acc + (Number(item[key]) || 0), 0);
+
+    // 汇总总计（包含KOL）
+    const totalsAll: TotalsBase = {
+      notesCount: sumField(levelStats, 'notesCount') + kolStats.notesCount,
+      totalInteraction: sumField(levelStats, 'totalInteraction') + kolStats.totalInteraction,
+      totalLiked: sumField(levelStats, 'totalLiked') + kolStats.totalLiked,
+      totalCollected: sumField(levelStats, 'totalCollected') + kolStats.totalCollected,
+      totalComments: sumField(levelStats, 'totalComments') + kolStats.totalComments,
+      totalShares: sumField(levelStats, 'totalShares') + kolStats.totalShares,
+      totalAdPrice: sumField(levelStats, 'totalAdPrice') + kolStats.totalAdPrice,
+    };
+
+    // 加权平均粉丝（包含KOL）
+    const weightedAvgFans =
+      totalBloggers > 0
+        ? Math.round(
+            (levelStats.reduce(
+              (acc, cur) => acc + (Number(cur.avgFans) || 0) * (Number(cur.bloggerCount) || 0),
+              0
+            ) + (Number(kolStats.avgFans) || 0) * (Number(kolStats.bloggerCount) || 0)) /
+              totalBloggers
+          )
+        : 0;
+
+    const toPercent = (value: number, total: number) => (total > 0 ? (value / total) * 100 : 0);
+
+    const applyPercentages = <T extends LevelStat>(
+      stat: T,
+      baseTotals: TotalsBase
+    ): T & LevelStatPercentages => ({
+      ...stat,
+      notesPercentage: toPercent(stat.notesCount, baseTotals.notesCount),
+      totalInteractionPercentage: toPercent(stat.totalInteraction, baseTotals.totalInteraction),
+      totalLikedPercentage: toPercent(stat.totalLiked, baseTotals.totalLiked),
+      totalCollectedPercentage: toPercent(stat.totalCollected, baseTotals.totalCollected),
+      totalCommentsPercentage: toPercent(stat.totalComments, baseTotals.totalComments),
+      totalSharesPercentage: toPercent(stat.totalShares, baseTotals.totalShares),
+      totalAdPricePercentage: toPercent(stat.totalAdPrice, baseTotals.totalAdPrice),
+    });
+
+    // 统一用包含KOL的总计来计算占比
+    const kolStatsWithPercentage = applyPercentages(kolStats, totalsAll);
+    const levelStatsWithPercentage = levelStats.map((stat) => applyPercentages(stat, totalsAll));
+
+    // 构造总计行，形状与分层一致
+    const totalRow: LevelStatWithPercentages = {
+      levelId: 'total',
+      levelName: '总计',
+      minFans: 0,
+      maxFans: null,
+      bloggerCount: totalBloggers,
+      bloggerPercentage: 100,
+      avgFans: weightedAvgFans,
+      totalInteraction: totalsAll.totalInteraction,
+      totalLiked: totalsAll.totalLiked,
+      totalCollected: totalsAll.totalCollected,
+      totalComments: totalsAll.totalComments,
+      totalShares: totalsAll.totalShares,
+      totalAdPrice: totalsAll.totalAdPrice,
+      adPricePerNote: totalsAll.notesCount > 0 ? totalsAll.totalAdPrice / totalsAll.notesCount : 0,
+      notesCount: totalsAll.notesCount,
+      // 百分比对总计行即为100%或0%
+      notesPercentage: totalsAll.notesCount > 0 ? 100 : 0,
+      totalInteractionPercentage: totalsAll.totalInteraction > 0 ? 100 : 0,
+      totalLikedPercentage: totalsAll.totalLiked > 0 ? 100 : 0,
+      totalCollectedPercentage: totalsAll.totalCollected > 0 ? 100 : 0,
+      totalCommentsPercentage: totalsAll.totalComments > 0 ? 100 : 0,
+      totalSharesPercentage: totalsAll.totalShares > 0 ? 100 : 0,
+      totalAdPricePercentage: totalsAll.totalAdPrice > 0 ? 100 : 0,
+    };
+
+    // 扁平化返回顺序：KOL -> 各层级 -> 总计
+    const rows: LevelStatWithPercentages[] = [
+      kolStatsWithPercentage,
+      ...levelStatsWithPercentage,
+      totalRow,
+    ];
+
     return NextResponse.json({
       success: true,
       data: {
-        levels: [kolStats, ...levelStats],
-        totalBloggers,
+        rows,
       },
     });
   } catch (error: any) {
