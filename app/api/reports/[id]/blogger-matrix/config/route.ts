@@ -36,6 +36,8 @@ const DEFAULT_CONFIG = {
 
 // 验证配置
 function validateConfig(customLevels: any[]): string | null {
+  console.log('song customLevels', customLevels);
+
   if (!Array.isArray(customLevels) || customLevels.length === 0) {
     return '至少需要1个自定义层级';
   }
@@ -81,17 +83,15 @@ function validateConfig(customLevels: any[]): string | null {
     }
   }
 
-  // 验证范围连续性
+  // 验证范围连续性（允许最低档不从0开始）
   const sortedRanges = [...ranges].sort((a, b) => a.min - b.min);
-  if (sortedRanges[0].min !== 0) {
-    return '层级之间不能留空，请确保所有粉丝数范围连续覆盖（从0开始）';
-  }
   for (let i = 0; i < sortedRanges.length - 1; i++) {
     const current = sortedRanges[i];
     const next = sortedRanges[i + 1];
     if (current.max === null) {
       return '不能有多个无上限的层级';
     }
+    // 右开左闭：前一档的 max 必须等于后一档的 min，确保无缝衔接
     if (current.max !== next.min) {
       return '层级之间不能留空，请确保所有粉丝数范围连续覆盖';
     }
@@ -100,23 +100,22 @@ function validateConfig(customLevels: any[]): string | null {
   return null;
 }
 
-// 检查范围是否重叠
+// 检查范围是否重叠（按左闭右开 [min, max) 处理；max 为 null 代表无上限）
 function rangesOverlap(
   min1: number,
   max1: number | null,
   min2: number,
   max2: number | null
 ): boolean {
-  if (max1 === null && max2 === null) {
-    return true; // 两个都是无上限，重叠
-  }
-  if (max1 === null) {
-    return min1 <= max2!; // 第一个无上限
-  }
-  if (max2 === null) {
-    return min2 <= max1; // 第二个无上限
-  }
-  return !(max1 <= min2 || max2 <= min1); // 有重叠
+  // 两个都是无上限，必定重叠
+  if (max1 === null && max2 === null) return true;
+
+  const end1 = max1 === null ? Number.POSITIVE_INFINITY : max1;
+  const end2 = max2 === null ? Number.POSITIVE_INFINITY : max2;
+
+  // 左闭右开下的重叠判定：a 与 b 重叠当且仅当 min1 < end2 且 min2 < end1
+  // 若仅在边界处相接（end1 === min2 或 end2 === min1），不算重叠
+  return min1 < end2 && min2 < end1;
 }
 
 export async function GET(

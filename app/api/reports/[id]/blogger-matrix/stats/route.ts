@@ -56,6 +56,7 @@ export async function GET(
         qiangua_note_info (
           NoteId,
           BloggerId,
+          OfficialVerified,
           Fans,
           LikedCount,
           CollectedCount,
@@ -142,6 +143,7 @@ export async function GET(
     // 处理数据：按博主分组统计
     const bloggerMap = new Map<string, {
       bloggerId: string;
+      officialVerified: boolean;
       fansCount: number;
       notes: Array<{
         likedCount: number;
@@ -158,17 +160,23 @@ export async function GET(
         if (!noteInfo) continue;
 
         const bloggerId = noteInfo.BloggerId;
+        const isVerified = Boolean(noteInfo.OfficialVerified);
         const fansFromNote = Number(noteInfo.Fans) || 0;
 
         if (!bloggerMap.has(bloggerId)) {
           bloggerMap.set(bloggerId, {
             bloggerId,
+            officialVerified: isVerified,
             fansCount: fansFromNote,
             notes: [],
           });
         }
 
         const blogger = bloggerMap.get(bloggerId)!;
+        // 如果任何一条笔记显示为官方认证，则该达人视为KOL
+        if (isVerified) {
+          blogger.officialVerified = true;
+        }
         // 取该达人在多条笔记中的最大粉丝数，防止偶发低值覆盖
         if (fansFromNote > blogger.fansCount) {
           blogger.fansCount = fansFromNote;
@@ -183,7 +191,13 @@ export async function GET(
       }
     }
 
-    // 按层级分组统计
+    // 先计算KOL（官方认证达人），后续层级需排除这些达人
+    const kolBloggers = Array.from(bloggerMap.values()).filter(
+      (blogger) => blogger.officialVerified === true
+    );
+    const kolBloggerIds = new Set(kolBloggers.map((b) => b.bloggerId));
+
+    // 按层级分组统计（排除KOL达人）
     const levelStats: Array<{
       levelId: string;
       levelName: string;
@@ -205,6 +219,8 @@ export async function GET(
 
     for (const level of customLevels) {
       const levelBloggers = Array.from(bloggerMap.values()).filter((blogger) => {
+        // 排除KOL达人
+        if (kolBloggerIds.has(blogger.bloggerId)) return false;
         const fans = blogger.fansCount;
         const minFans = level.minFans || 0;
         const maxFans = level.maxFans;
@@ -257,11 +273,6 @@ export async function GET(
       });
     }
 
-    // 知名KOL层（固定层级，粉丝数>=100万）
-    const kolBloggers = Array.from(bloggerMap.values()).filter(
-      (blogger) => blogger.fansCount >= 1000000
-    );
-    const kolBloggerIds = new Set(kolBloggers.map((b) => b.bloggerId));
     let kolTotalInteraction = 0;
     let kolTotalLiked = 0;
     let kolTotalCollected = 0;
@@ -288,7 +299,7 @@ export async function GET(
     const kolStats = {
       levelId: 'kol',
       levelName: '知名KOL',
-      minFans: 1000000,
+      minFans: 0,
       maxFans: null,
       bloggerCount: kolBloggers.length,
       bloggerPercentage: totalBloggers > 0 ? (kolBloggers.length / totalBloggers) * 100 : 0,

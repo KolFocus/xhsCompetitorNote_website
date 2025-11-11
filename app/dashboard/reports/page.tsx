@@ -101,6 +101,7 @@ interface Note {
   bloggerNickName: string;
   bloggerSmallAvatar: string | null;
   bloggerBigAvatar: string | null;
+  officialVerified?: boolean | null;
   brandId: string | null;
   brandIdKey: string | null;
   brandName: string | null;
@@ -122,6 +123,8 @@ export default function ReportsPage() {
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [addNotesModalVisible, setAddNotesModalVisible] = useState(false);
+  // 达人矩阵分析刷新键，仅在有效集合变化时递增
+  const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
 
   // 自定义滚动条样式
   React.useEffect(() => {
@@ -258,6 +261,8 @@ export default function ReportsPage() {
               setSelectedNoteIds([]);
               loadNotes();
               loadReportDetail(reportId);
+              // 有效集合发生变化，触发达人矩阵重新分析
+              setAnalysisRefreshKey((k) => k + 1);
             } else {
               message.error(data.error || '操作失败');
             }
@@ -283,6 +288,8 @@ export default function ReportsPage() {
               setSelectedNoteIds([]);
               loadNotes();
               loadReportDetail(reportId);
+              // 有效集合发生变化，触发达人矩阵重新分析
+              setAnalysisRefreshKey((k) => k + 1);
             } else {
               message.error(data.error || '操作失败');
             }
@@ -304,6 +311,8 @@ export default function ReportsPage() {
           setSelectedNoteIds([]);
           loadNotes();
           loadReportDetail(reportId);
+          // 有效集合发生变化，触发达人矩阵重新分析
+          setAnalysisRefreshKey((k) => k + 1);
         } else {
           message.error(data.error || '操作失败');
         }
@@ -458,19 +467,50 @@ export default function ReportsPage() {
       title: '博主',
       key: 'blogger',
       width: 150,
-      render: (_: any, record: Note) => (
-        <Space>
-          <Avatar
-            size="small"
-            src={getProxiedImageUrl(record.bloggerSmallAvatar || record.bloggerBigAvatar)}
-          >
-            {record.bloggerNickName?.[0]}
-          </Avatar>
-          <span style={{ fontSize: 12 }}>
-            {record.bloggerNickName || '未知博主'}
-          </span>
-        </Space>
-      ),
+      render: (_: any, record: Note) => {
+        const verified = !!record.officialVerified;
+        const initial = record.bloggerNickName?.[0];
+        const avatarSrc = getProxiedImageUrl(record.bloggerSmallAvatar || record.bloggerBigAvatar);
+        return (
+          <Space>
+            <div style={{ position: 'relative', width: 24, height: 24 }}>
+              <Avatar
+                size="small"
+                src={avatarSrc}
+                style={{ width: 24, height: 24 }}
+              >
+                {initial}
+              </Avatar>
+              {verified && (
+                <Tooltip title="加V达人">
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: -2,
+                      bottom: -2,
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: '#FFD700',
+                      color: '#fff',
+                      fontSize: 10,
+                      lineHeight: '14px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      boxShadow: '0 0 0 1px #fff',
+                    }}
+                  >
+                    K
+                  </div>
+                </Tooltip>
+              )}
+            </div>
+            <span style={{ fontSize: 12 }}>
+              {record.bloggerNickName || '未知博主'}
+            </span>
+          </Space>
+        );
+      },
     },
     {
       title: '品牌',
@@ -696,6 +736,8 @@ export default function ReportsPage() {
     if (reportId) {
       loadReportDetail(reportId); // 重新加载报告详情
       loadNotes(); // 重新加载笔记列表
+      // 追加笔记改变有效集合，触发达人矩阵重新分析
+      setAnalysisRefreshKey((k) => k + 1);
     }
   };
 
@@ -798,10 +840,7 @@ export default function ReportsPage() {
             <div style={{ marginBottom: 24 }}>
               <BloggerMatrixAnalysis
                 reportId={reportId}
-                brandId={brandId}
-                bloggerId={bloggerId}
-                startDate={dateRange ? dateRange[0].format('YYYY-MM-DD') : null}
-                endDate={dateRange ? dateRange[1].format('YYYY-MM-DD') : null}
+                refreshKey={analysisRefreshKey}
               />
             </div>
           )}

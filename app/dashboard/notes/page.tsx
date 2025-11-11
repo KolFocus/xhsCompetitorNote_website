@@ -98,6 +98,7 @@ interface Note {
   CurrentUserIsFavorite: boolean;
   Fans?: number | null;
   AdPrice?: number | null; // 单位：分
+  OfficialVerified?: boolean | null;
 }
 
 interface Brand {
@@ -436,19 +437,50 @@ export default function NotesPage() {
       title: '博主',
       key: 'Blogger',
       width: 150,
-      render: (_, record: Note) => (
-        <Space>
-          <Avatar
-            size="small"
-            src={getProxiedImageUrl(record.SmallAvatar || record.BigAvatar)}
-          >
-            {record.BloggerNickName?.[0]}
-          </Avatar>
-          <span style={{ fontSize: 12 }}>
-            {record.BloggerNickName || '未知博主'}
-          </span>
-        </Space>
-      ),
+      render: (_, record: Note) => {
+        const verified = !!record.OfficialVerified;
+        const initial = record.BloggerNickName?.[0];
+        const avatarSrc = getProxiedImageUrl(record.SmallAvatar || record.BigAvatar);
+        return (
+          <Space>
+            <div style={{ position: 'relative', width: 24, height: 24 }}>
+              <Avatar
+                size="small"
+                src={avatarSrc}
+                style={{ width: 24, height: 24 }}
+              >
+                {initial}
+              </Avatar>
+              {verified && (
+                <Tooltip title="加V达人">
+                  <div
+                    style={{
+                      position: 'absolute',
+                      right: -2,
+                      bottom: -2,
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: '#FFD700',
+                      color: '#fff',
+                      fontSize: 10,
+                      lineHeight: '14px',
+                      textAlign: 'center',
+                      fontWeight: 600,
+                      boxShadow: '0 0 0 1px #fff',
+                    }}
+                  >
+                    K
+                  </div>
+                </Tooltip>
+              )}
+            </div>
+            <span style={{ fontSize: 12 }}>
+              {record.BloggerNickName || '未知博主'}
+            </span>
+          </Space>
+        );
+      },
     },
     {
       title: '品牌',

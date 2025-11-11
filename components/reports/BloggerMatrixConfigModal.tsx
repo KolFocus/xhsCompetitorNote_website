@@ -114,7 +114,11 @@ export default function BloggerMatrixConfigModal({ open, reportId, onCancel, onS
               onSuccess();
               onCancel();
             } else {
-              message.error(data.error || '保存失败');
+              const backendMsg: string = data?.error || '';
+              // 映射后端“区间重叠”相关错误为统一的友好提示
+              const overlapHints = ['overlap', '重叠', '范围交叉', 'range conflict', 'conflict'];
+              const isOverlap = overlapHints.some((hint) => backendMsg.toLowerCase?.().includes(hint) || backendMsg.includes(hint));
+              message.error(isOverlap ? '粉丝数范围与其他层级重叠，请调整' : (backendMsg || '保存失败'));
             }
           } catch (e) {
             message.error('保存失败');
@@ -373,7 +377,7 @@ function validateLevels(levels: Level[]): string[] {
     const prev = levels[i - 1];
     const curr = levels[i];
     if (!(prev.minFans > curr.minFans)) {
-      errors.push(`第 ${i + 1} 行：起始粉丝数必须小于上一行的起始值`);
+      errors.push('粉丝数范围与其他层级重叠，请调整');
       return errors;
     }
   }
@@ -387,7 +391,7 @@ function validateLevels(levels: Level[]): string[] {
     const curr = sorted[i];
 
     if (!(curr.minFans < prev.minFans)) {
-      errors.push(`阈值需从高到低设置，且彼此不相等`);
+      errors.push('粉丝数范围与其他层级重叠，请调整');
       return errors;
     }
   }

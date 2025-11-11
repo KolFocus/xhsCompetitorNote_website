@@ -92,7 +92,8 @@ export async function GET(
           BrandName,
           VideoDuration,
           Fans,
-          AdPrice
+          AdPrice,
+          OfficialVerified
         )
       `, { count: 'exact' })
       .eq('ReportId', reportId)
@@ -157,6 +158,7 @@ export async function GET(
           bloggerNickName: note.BloggerNickName,
           bloggerSmallAvatar: note.SmallAvatar,
           bloggerBigAvatar: note.BigAvatar,
+          officialVerified: note.OfficialVerified ?? null,
           brandId: note.BrandId,
           brandIdKey: note.BrandIdKey,
           brandName: note.BrandName,

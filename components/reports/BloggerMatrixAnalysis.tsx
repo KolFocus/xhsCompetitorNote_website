@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Table,
@@ -37,10 +37,7 @@ interface LevelStats {
 
 interface BloggerMatrixAnalysisProps {
   reportId: string;
-  brandId?: string | null;
-  bloggerId?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
+  refreshKey?: number;
 }
 
 // 格式化数字
@@ -56,32 +53,51 @@ const formatNumber = (num: number): string => {
 
 export default function BloggerMatrixAnalysis({
   reportId,
-  brandId,
-  bloggerId,
-  startDate,
-  endDate,
+  refreshKey,
 }: BloggerMatrixAnalysisProps) {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<LevelStats[]>([]);
   const [totalBloggers, setTotalBloggers] = useState(0);
   const [configModalVisible, setConfigModalVisible] = useState(false);
 
+  const totals = useMemo(() => {
+    const sum = <T extends keyof LevelStats>(list: LevelStats[], key: T): number =>
+      list.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
+    // 由于 KOL 行与其他层级重叠，合计时排除 KOL 行，避免双计
+    const rowsWithoutKOL = stats.filter((s) => s.levelId !== 'kol');
+    const bloggerTotal = totalBloggers || sum(stats, 'bloggerCount');
+    return {
+      bloggerCount: bloggerTotal,
+      avgFansWeighted:
+        bloggerTotal > 0
+          ? Math.round(
+              rowsWithoutKOL.reduce(
+                (acc, cur) => acc + (cur.avgFans || 0) * (cur.bloggerCount || 0),
+                0
+              ) / bloggerTotal
+            )
+          : 0,
+      notesCount: sum(rowsWithoutKOL, 'notesCount'),
+      totalInteraction: sum(rowsWithoutKOL, 'totalInteraction'),
+      totalLiked: sum(rowsWithoutKOL, 'totalLiked'),
+      totalCollected: sum(rowsWithoutKOL, 'totalCollected'),
+      totalComments: sum(rowsWithoutKOL, 'totalComments'),
+      totalViews: sum(rowsWithoutKOL, 'totalViews'),
+      totalShares: sum(rowsWithoutKOL, 'totalShares'),
+    };
+  }, [stats, totalBloggers]);
+
   useEffect(() => {
     if (reportId) {
       loadStats();
     }
-  }, [reportId, brandId, bloggerId, startDate, endDate]);
+  }, [reportId, refreshKey]);
 
   const loadStats = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (brandId) params.set('brandId', brandId);
-      if (bloggerId) params.set('bloggerId', bloggerId);
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
-
-      const response = await fetch(`/api/reports/${reportId}/blogger-matrix/stats?${params}`);
+      // 分析基于当前报告的有效笔记全集，不受列表筛选影响
+      const response = await fetch(`/api/reports/${reportId}/blogger-matrix/stats`);
       const data = await response.json();
       if (data.success) {
         setStats(data.data.levels || []);
@@ -151,7 +167,14 @@ export default function BloggerMatrixAnalysis({
       key: 'notesCount',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.notesCount > 0 ? `${((count / totals.notesCount) * 100).toFixed(1)}%` : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '总互动量',
@@ -159,7 +182,16 @@ export default function BloggerMatrixAnalysis({
       key: 'totalInteraction',
       width: 120,
       align: 'right',
-      render: (interaction: number) => formatNumber(interaction),
+      render: (interaction: number) => (
+        <div>
+          <div>{formatNumber(interaction)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalInteraction > 0
+              ? `${((interaction / totals.totalInteraction) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '点赞',
@@ -167,7 +199,14 @@ export default function BloggerMatrixAnalysis({
       key: 'totalLiked',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalLiked > 0 ? `${((count / totals.totalLiked) * 100).toFixed(1)}%` : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '收藏',
@@ -175,7 +214,16 @@ export default function BloggerMatrixAnalysis({
       key: 'totalCollected',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalCollected > 0
+              ? `${((count / totals.totalCollected) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '评论',
@@ -183,7 +231,16 @@ export default function BloggerMatrixAnalysis({
       key: 'totalComments',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalComments > 0
+              ? `${((count / totals.totalComments) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '浏览',
@@ -191,7 +248,14 @@ export default function BloggerMatrixAnalysis({
       key: 'totalViews',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalViews > 0 ? `${((count / totals.totalViews) * 100).toFixed(1)}%` : '0%'}
+          </div>
+        </div>
+      ),
     },
     {
       title: '分享',
@@ -199,7 +263,16 @@ export default function BloggerMatrixAnalysis({
       key: 'totalShares',
       width: 100,
       align: 'right',
-      render: (count: number) => formatNumber(count),
+      render: (count: number) => (
+        <div>
+          <div>{formatNumber(count)}</div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {totals.totalShares > 0
+              ? `${((count / totals.totalShares) * 100).toFixed(1)}%`
+              : '0%'}
+          </div>
+        </div>
+      ),
     },
   ];
 
@@ -231,6 +304,91 @@ export default function BloggerMatrixAnalysis({
               pagination={false}
               scroll={{ x: 1000 }}
               size="small"
+              summary={(pageData) => {
+                const sum = <T extends keyof LevelStats>(key: T): number =>
+                  pageData.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
+                // 合计时排除 KOL 行，避免与其他层级重叠导致双计
+                const rowsWithoutKOL = pageData.filter((row) => row.levelId !== 'kol');
+                const sumNoKOL = <T extends keyof LevelStats>(key: T): number =>
+                  rowsWithoutKOL.reduce((acc, cur) => acc + (Number(cur[key]) || 0), 0);
+                const totalBloggerCount = totalBloggers || sum('bloggerCount');
+                const weightedAvgFans =
+                  totalBloggerCount > 0
+                    ? Math.round(
+                        rowsWithoutKOL.reduce(
+                          (acc, cur) => acc + (cur.avgFans || 0) * (cur.bloggerCount || 0),
+                          0
+                        ) / totalBloggerCount
+                      )
+                    : 0;
+                const totalNotes = sumNoKOL('notesCount');
+                const totalInteraction = sumNoKOL('totalInteraction');
+                const totalLiked = sumNoKOL('totalLiked');
+                const totalCollected = sumNoKOL('totalCollected');
+                const totalComments = sumNoKOL('totalComments');
+                const totalViews = sumNoKOL('totalViews');
+                const totalShares = sumNoKOL('totalShares');
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0}>
+                        <span style={{ fontWeight: 600 }}>总计</span>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={1} align="right">
+                        <div>{formatNumber(totalBloggerCount)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalBloggerCount > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={2} align="right">
+                        {formatNumber(weightedAvgFans)}
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={3} align="right">
+                        <div>{formatNumber(totalNotes)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalNotes > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={4} align="right">
+                        <div>{formatNumber(totalInteraction)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalInteraction > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={5} align="right">
+                        <div>{formatNumber(totalLiked)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalLiked > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={6} align="right">
+                        <div>{formatNumber(totalCollected)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalCollected > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={7} align="right">
+                        <div>{formatNumber(totalComments)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalComments > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={8} align="right">
+                        <div>{formatNumber(totalViews)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalViews > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                      <Table.Summary.Cell index={9} align="right">
+                        <div>{formatNumber(totalShares)}</div>
+                        <div style={{ fontSize: 12, color: '#999' }}>
+                          {totalShares > 0 ? '100.0%' : '0%'}
+                        </div>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                );
+              }}
             />
           ) : (
             <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
