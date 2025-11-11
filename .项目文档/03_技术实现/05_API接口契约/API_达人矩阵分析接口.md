@@ -1,4 +1,18 @@
+---
+标题: API_达人矩阵分析接口
+Owner: 后端（TBD）
+状态: 已批准
+Canonical: true
+Links:
+  业务规则: ../../07_业务逻辑/报告功能业务逻辑.md
+  业务规则_达人矩阵: ../../../../05_核心业务逻辑/达人矩阵统计业务逻辑.md
+  产品规格: ../../../../01_产品定义/02_功能规格/达人矩阵属性分析功能规格.md
+  UI规格: ../../../../02_UI设计/02_原型与线框图/达人矩阵分析页面设计.md
+  测试用例: ../../../../04_质量保证/02_测试用例/达人矩阵分析功能测试用例.md
+---
 # API_达人矩阵分析接口
+
+> 统计口径以“业务规则_达人矩阵”为准；本文仅定义请求/响应与字段契约，不复述算法与分母口径。
 
 ## 概述
 
@@ -213,6 +227,85 @@
 ---
 
 ### 3. 删除达人分层配置
+### 4. 获取达人矩阵统计数据
+
+**接口**: `GET /api/reports/[id]/blogger-matrix/stats`
+
+**功能**: 返回当前报告的达人矩阵统计结果与参与统计的笔记明细。
+
+**响应数据**:
+
+```json
+{
+  "success": true,
+  "data": {
+    "rows": [
+      {
+        "levelId": "kol",
+        "levelName": "知名KOL",
+        "minFans": 0,
+        "maxFans": null,
+        "bloggerCount": 15,
+        "bloggerPercentage": 12.5,
+        "avgFans": 852000,
+        "totalInteraction": 1256000,
+        "totalLiked": 800000,
+        "totalCollected": 300000,
+        "totalComments": 155000,
+        "totalShares": 50000,
+        "notesCount": 234,
+        "notesPercentage": 18.2,
+        "totalInteractionPercentage": 35.8,
+        "totalLikedPercentage": 34.1,
+        "totalCollectedPercentage": 36.0,
+        "totalCommentsPercentage": 31.3,
+        "totalSharesPercentage": 28.1,
+        "totalAdPrice": 1234000,
+        "totalAdPricePercentage": 22.1,
+        "adPricePerNote": 5276.07
+      }
+    ],
+    "details": [
+      {
+        "levelName": "知名KOL",
+        "noteId": "1727038833",
+        "title": "...",
+        "content": "...",
+        "coverImage": "...",
+        "noteType": "video",
+        "isBusiness": true,
+        "isAdNote": true,
+        "publishTime": "2025-10-29T17:47:41+08:00",
+        "likedCount": 170,
+        "collectedCount": 37,
+        "commentsCount": 76,
+        "viewCount": 6919,
+        "shareCount": 44,
+        "fans": 135759,
+        "adPrice": 35000,
+        "bloggerId": "63076",
+        "bloggerNickName": "Anson董祺",
+        "bloggerSmallAvatar": "...",
+        "bloggerBigAvatar": "...",
+        "officialVerified": false,
+        "brandId": "46899",
+        "brandIdKey": "ede74d",
+        "brandName": "Ralph Lauren拉夫劳伦",
+        "videoDuration": "1:22",
+        "status": "active",
+        "addedAt": "2024-01-15T10:30:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+**说明（与实现一致）**:
+- 分层优先级：先抽取“知名KOL”（OfficialVerified=true），其余达人按 `[minFans, maxFans)` 归档。
+- “总互动量”定义为：点赞 + 收藏 + 评论（不含分享）；“分享”独立统计及占比。
+- 百分比的分母包含“知名KOL”和所有自定义层级的合计。
+
 
 **接口**: `DELETE /api/reports/[id]/blogger-matrix/config`
 

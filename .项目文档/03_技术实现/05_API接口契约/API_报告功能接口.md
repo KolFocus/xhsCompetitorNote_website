@@ -428,6 +428,22 @@
 
 ---
 
+### 10. 达人矩阵统计与配置（交叉引用）
+
+为保持契约清晰，达人矩阵统计与配置接口在独立文档中定义，本文仅做入口说明与交叉引用：
+
+- 统计接口：`GET /api/reports/[id]/blogger-matrix/stats`
+  - 返回字段概览：`rows[]`（各层级汇总，含KOL与自定义层）与 `details[]`（用于导出/明细）
+  - 指标口径：总互动量=点赞+收藏+评论（不含分享）；分享单独统计与占比
+- 配置读取：`GET /api/reports/[id]/blogger-matrix/config`
+  - 读取优先级：`qiangua_report.CustomLevels`（存在则用），否则使用系统默认
+- 配置保存：`POST /api/reports/[id]/blogger-matrix/config`
+  - 存储字段：`qiangua_report.CustomLevels`（JSON）
+
+完整契约请参见：`API_达人矩阵分析接口.md`
+
+---
+
 ## 数据字段说明
 
 ### 报告对象字段
