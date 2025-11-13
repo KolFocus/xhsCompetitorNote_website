@@ -2,15 +2,13 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Avatar,
   Button,
   Card,
-  Checkbox,
   Col,
   Empty,
-  Input,
   message,
   Modal,
   Row,
@@ -21,16 +19,21 @@ import {
   Tag,
   Tooltip,
   Typography,
+  DatePicker,
 } from 'antd';
 import {
   ClearOutlined,
   DeleteOutlined,
   ReloadOutlined,
-  TagsOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import type { Dayjs } from 'dayjs';
+import { useSearchParams } from 'next/navigation';
 
 import type { BulkTaggingResult, TagDTO, TagSetDTO } from '@/lib/types';
+
+const { RangePicker } = DatePicker;
+const { Option } = Select;
 
 // 图片代理服务
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
@@ -81,6 +84,25 @@ interface NotesResponse {
 
 type NoteTagMap = Record<string, TagDTO[]>;
 
+interface Report {
+  reportId: string;
+  reportName: string;
+  createdAt: string;
+  updatedAt: string;
+  activeNotesCount: number;
+  ignoredNotesCount: number;
+}
+
+interface Brand {
+  BrandId: string;
+  BrandName: string;
+}
+
+interface Blogger {
+  BloggerId: string;
+  BloggerNickName: string;
+}
+
 const { Title, Text } = Typography;
 
 const NoteTaggingPage: React.FC = () => {
@@ -93,14 +115,26 @@ const NoteTaggingPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [noteTags, setNoteTags] = useState<NoteTagMap>({});
-  const [filterUnTagged, setFilterUnTagged] = useState(true);
-  const [filterTagId, setFilterTagId] = useState<string | null>(null);
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [filterTagId, setFilterTagId] = useState<string | null>('__untagged__');
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkModalLoading, setBulkModalLoading] = useState(false);
   const [bulkSelectedTagIds, setBulkSelectedTagIds] = useState<string[]>([]);
+  const searchParams = useSearchParams();
+  const lastAppliedQuery = useRef<{ tagSetId?: string | null; reportId?: string | null }>({
+    tagSetId: undefined,
+    reportId: undefined,
+  });
+  
+  // 新增筛选条件
+  const [reports, setReports] = useState<Report[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [bloggers, setBloggers] = useState<Blogger[]>([]);
+  const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
+  const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
+  const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
+  const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 
   const fetchTagSets = async () => {
     try {
@@ -125,21 +159,71 @@ const NoteTaggingPage: React.FC = () => {
 
   useEffect(() => {
     fetchTagSets();
+    loadFilters();
   }, []);
+
+  const tagSetIdFromQuery = searchParams.get('tagSetId');
+  const reportIdFromQuery = searchParams.get('reportId');
+
+  useEffect(() => {
+    const { tagSetId, reportId } = lastAppliedQuery.current;
+    if (tagSetIdFromQuery && tagSetIdFromQuery !== tagSetId) {
+      setSelectedTagSetId(tagSetIdFromQuery);
+    }
+    if (reportIdFromQuery && reportIdFromQuery !== reportId) {
+      setSelectedReportId(reportIdFromQuery);
+    }
+    lastAppliedQuery.current = {
+      tagSetId: tagSetIdFromQuery,
+      reportId: reportIdFromQuery,
+    };
+  }, [tagSetIdFromQuery, reportIdFromQuery]);
+
+  // 加载筛选条件数据（报告、品牌、博主）
+  const loadFilters = async () => {
+    try {
+      const [reportsRes, brandsRes, bloggersRes] = await Promise.all([
+        fetch('/api/reports'),
+        fetch('/api/brands'),
+        fetch('/api/bloggers'),
+      ]);
+
+      const reportsData = await reportsRes.json();
+      const brandsData = await brandsRes.json();
+      const bloggersData = await bloggersRes.json();
+
+      if (reportsData.success) {
+        setReports(reportsData.data.list || []);
+      }
+      if (brandsData.success) {
+        setBrands(brandsData.data || []);
+      }
+      if (bloggersData.success) {
+        setBloggers(bloggersData.data || []);
+      }
+    } catch (error) {
+      console.error('Failed to load filters:', error);
+    }
+  };
 
   const currentTagSet = useMemo(
     () => tagSets.find((tagSet) => tagSet.tagSetId === selectedTagSetId) || null,
     [selectedTagSetId, tagSets],
   );
 
-  const tagOptions = useMemo(
-    () =>
-      (currentTagSet?.tags || []).map((tag) => ({
+  const tagOptions = useMemo(() => {
+    const options = [
+      {
+        label: '仅显示未打标笔记',
+        value: '__untagged__',
+      },
+      ...(currentTagSet?.tags || []).map((tag) => ({
         label: tag.tagName,
         value: tag.tagId,
       })),
-    [currentTagSet],
-  );
+    ];
+    return options;
+  }, [currentTagSet]);
 
   const loadNotes = async (pageValue = page, pageSizeValue = pageSize) => {
     if (!selectedTagSetId) {
@@ -153,8 +237,19 @@ const NoteTaggingPage: React.FC = () => {
         pageSize: String(pageSizeValue),
       });
 
-      if (searchKeyword) {
-        params.set('keyword', searchKeyword.trim());
+      // 添加筛选参数
+      if (selectedReportId) {
+        params.set('reportId', selectedReportId);
+      }
+      if (selectedBrand) {
+        params.set('brandId', selectedBrand);
+      }
+      if (selectedBlogger) {
+        params.set('bloggerId', selectedBlogger);
+      }
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        params.set('startDate', dateRange[0].format('YYYY-MM-DD'));
+        params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
       }
 
       const response = await fetch(`/api/notes?${params.toString()}`);
@@ -209,10 +304,18 @@ const NoteTaggingPage: React.FC = () => {
 
   useEffect(() => {
     if (selectedTagSetId) {
+      setFilterTagId('__untagged__');
       loadNotes(1, pageSize);
       setSelectedNoteIds([]);
     }
   }, [selectedTagSetId]);
+
+  // 当筛选条件变化时重新加载笔记
+  useEffect(() => {
+    if (selectedTagSetId) {
+      loadNotes(1, pageSize);
+    }
+  }, [selectedReportId, selectedBrand, selectedBlogger, dateRange]);
 
   const handleTagChange = async (noteId: string, value: string[]) => {
     if (!selectedTagSetId) return;
@@ -246,24 +349,26 @@ const NoteTaggingPage: React.FC = () => {
   };
 
   const filteredNotes = useMemo(() => {
-    const keyword = searchKeyword.trim().toLowerCase();
     return noteList.filter((note) => {
       const assignedTags = noteTags[note.NoteId] || [];
-      if (filterUnTagged && assignedTags.length > 0) {
-        return false;
+      
+      // 标签筛选逻辑
+      if (filterTagId === '__untagged__') {
+        // 仅显示未打标笔记
+        if (assignedTags.length > 0) {
+          return false;
+        }
+      } else if (filterTagId) {
+        // 显示指定标签的笔记
+        if (!assignedTags.some((tag) => tag.tagId === filterTagId)) {
+          return false;
+        }
       }
-      if (filterTagId && !assignedTags.some((tag) => tag.tagId === filterTagId)) {
-        return false;
-      }
-      if (!keyword) {
-        return true;
-      }
-      return (
-        note.Title?.toLowerCase().includes(keyword) ||
-        note.BloggerNickName?.toLowerCase().includes(keyword)
-      );
+      // filterTagId 为 null 时显示所有笔记
+      
+      return true;
     });
-  }, [noteList, noteTags, filterUnTagged, filterTagId, searchKeyword]);
+  }, [noteList, noteTags, filterTagId]);
 
   const handleBulkTagging = async () => {
     if (!selectedTagSetId || bulkSelectedTagIds.length === 0) {
@@ -412,84 +517,150 @@ const NoteTaggingPage: React.FC = () => {
     <div style={{ padding: 24 }}>
       <Space direction="vertical" style={{ width: '100%' }} size="large">
         <Card>
-          <Row gutter={[16, 16]} align="middle">
-            <Col xs={24} md={8}>
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text type="secondary">标签系列</Text>
-                <Select
-                  showSearch
-                  style={{ width: '100%' }}
-                  placeholder="请选择标签系列"
-                  value={selectedTagSetId || undefined}
-                  onChange={(value) => setSelectedTagSetId(value)}
-                  options={tagSets.map((tagSet) => ({
-                    label: `${tagSet.tagSetName} ${
-                      tagSet.type === 'system' ? '(系统)' : ''
-                    }`,
-                    value: tagSet.tagSetId,
-                  }))}
-                  loading={loading}
-                />
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            <Text type="secondary">标签系列</Text>
+            <Select
+              showSearch
+              style={{ width: '100%', maxWidth: 400 }}
+              placeholder="请选择标签系列"
+              value={selectedTagSetId || undefined}
+              onChange={(value) => setSelectedTagSetId(value)}
+              options={tagSets.map((tagSet) => ({
+                label: `${tagSet.tagSetName} ${
+                  tagSet.type === 'system' ? '(系统)' : ''
+                }`,
+                value: tagSet.tagSetId,
+              }))}
+              loading={loading}
+            />
+          </Space>
+        </Card>
+
+        <Card>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>分析报告：</strong>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="选择分析报告"
+                allowClear
+                value={selectedReportId}
+                onChange={setSelectedReportId}
+                showSearch
+                filterOption={(input, option) => {
+                  const label = typeof option?.label === 'string' ? option.label : String(option?.children || '');
+                  return label.toLowerCase().includes(input.toLowerCase());
+                }}
+              >
+                {reports.map((report) => (
+                  <Option key={report.reportId} value={report.reportId} label={report.reportName}>
+                    {report.reportName}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>品牌：</strong>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="选择品牌"
+                allowClear
+                value={selectedBrand}
+                onChange={setSelectedBrand}
+                showSearch
+                filterOption={(input, option) => {
+                  const label = typeof option?.label === 'string' ? option.label : String(option?.children || '');
+                  return label.toLowerCase().includes(input.toLowerCase());
+                }}
+              >
+                {brands.map((brand) => (
+                  <Option key={brand.BrandId} value={brand.BrandId} label={brand.BrandName}>
+                    {brand.BrandName}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>博主：</strong>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                placeholder="选择博主"
+                allowClear
+                value={selectedBlogger}
+                onChange={setSelectedBlogger}
+                showSearch
+                filterOption={(input, option) => {
+                  const label = typeof option?.label === 'string' ? option.label : String(option?.children || '');
+                  return label.toLowerCase().includes(input.toLowerCase());
+                }}
+              >
+                {bloggers.map((blogger) => (
+                  <Option key={blogger.BloggerId} value={blogger.BloggerId} label={blogger.BloggerNickName}>
+                    {blogger.BloggerNickName}
+                  </Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>发布日期：</strong>
+              </div>
+              <RangePicker
+                style={{ width: '100%' }}
+                value={dateRange}
+                onChange={(dates) => setDateRange(dates)}
+                format="YYYY-MM-DD"
+              />
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>标签筛选：</strong>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                allowClear
+                placeholder="选择标签"
+                options={tagOptions}
+                value={filterTagId || undefined}
+                onChange={(value) => setFilterTagId(value || null)}
+                disabled={!currentTagSet}
+              />
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>&nbsp;</div>
+              <Space>
+                <Button icon={<ReloadOutlined />} onClick={() => loadNotes(page)}>
+                  刷新
+                </Button>
+                <Button
+                  onClick={() => {
+                    setSelectedReportId(undefined);
+                    setSelectedBrand(undefined);
+                    setSelectedBlogger(undefined);
+                    setDateRange(null);
+                    setFilterTagId('__untagged__');
+                    setPage(1);
+                    // 重置后重新加载笔记
+                    setTimeout(() => {
+                      loadNotes(1, pageSize);
+                    }, 0);
+                  }}
+                >
+                  重置
+                </Button>
               </Space>
             </Col>
-            <Col xs={24} md={6}>
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text type="secondary">标签筛选</Text>
-                <Select
-                  allowClear
-                  placeholder="选择标签"
-                  options={tagOptions}
-                  value={filterTagId || undefined}
-                  onChange={(value) => setFilterTagId(value || null)}
-                  disabled={!currentTagSet}
-                />
-              </Space>
-            </Col>
-            <Col xs={24} md={6}>
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text type="secondary">关键字搜索</Text>
-                <Input
-                  placeholder="按标题或博主搜索"
-                  value={searchKeyword}
-                  onChange={(event) => setSearchKeyword(event.target.value)}
-                  allowClear
-                  prefix={<TagsOutlined />}
-                />
-              </Space>
-            </Col>
-            <Col xs={24} md={4}>
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
-                <Text type="secondary">操作</Text>
-                <Space>
-                  <Tooltip title="刷新笔记列表">
-                    <Button icon={<ReloadOutlined />} onClick={() => loadNotes()}>
-                      刷新
-                    </Button>
-                  </Tooltip>
-                  <Tooltip title="重置筛选条件">
-                    <Button
-                      icon={<ClearOutlined />}
-                      onClick={() => {
-                        setFilterTagId(null);
-                        setFilterUnTagged(true);
-                        setSearchKeyword('');
-                        loadNotes(1, pageSize);
-                      }}
-                    >
-                      重置
-                    </Button>
-                  </Tooltip>
-                </Space>
-              </Space>
-            </Col>
-          </Row>
-          <Row style={{ marginTop: 16 }}>
-            <Checkbox
-              checked={filterUnTagged}
-              onChange={(event) => setFilterUnTagged(event.target.checked)}
-            >
-              仅显示未打标笔记
-            </Checkbox>
           </Row>
         </Card>
 

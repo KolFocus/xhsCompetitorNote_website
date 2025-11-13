@@ -11,7 +11,9 @@ import {
   Typography,
   Select,
 } from 'antd';
+import { useRouter } from 'next/navigation';
 import type { ColumnsType } from 'antd/es/table';
+import { SettingOutlined } from '@ant-design/icons';
 // XLSX 将在导出时动态导入，避免类型依赖问题
 
 const { Title } = Typography;
@@ -78,6 +80,7 @@ export default function TagAnalysis({
   reportId,
   refreshKey,
 }: TagAnalysisProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<TagStats[]>([]);
   const [tagSets, setTagSets] = useState<TagSetDTO[]>([]);
@@ -306,6 +309,24 @@ export default function TagAnalysis({
     }
   };
 
+  const handleConfigure = () => {
+    if (!selectedTagSetId) {
+      message.warning('请先选择标签系列');
+      return;
+    }
+
+    const params = new URLSearchParams({
+      tagSetId: selectedTagSetId,
+      reportId,
+    });
+
+    if (reportId) {
+      params.set('reportId', reportId);
+    }
+
+    router.push(`/dashboard/notes/tagging?${params.toString()}`);
+  };
+
   const columns: ColumnsType<TagStats> = [
     {
       title: '标签名称',
@@ -518,7 +539,7 @@ export default function TagAnalysis({
       title={
         <Space>
           <Title level={5} style={{ margin: 0 }}>
-            基于内容标签的笔记分析
+            内容矩阵属性分析
           </Title>
         </Space>
       }
@@ -539,6 +560,13 @@ export default function TagAnalysis({
           </Select>
           <Button onClick={handleExport} disabled={!selectedTagSetId || stats.length === 0}>
             导出Excel
+          </Button>
+          <Button
+            icon={<SettingOutlined />}
+            onClick={handleConfigure}
+            disabled={!selectedTagSetId}
+          >
+            配置
           </Button>
         </Space>
       }
