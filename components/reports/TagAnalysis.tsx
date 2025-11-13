@@ -347,25 +347,6 @@ export default function TagAnalysis({
       },
     },
     {
-      title: '笔记数量',
-      dataIndex: 'notesCount',
-      key: 'notesCount',
-      width: 100,
-      align: 'right',
-      render: (count: number, record: TagStats) => {
-        const percentage =
-          typeof record.notesPercentage === 'number' ? record.notesPercentage : 0;
-        return (
-          <div>
-            <div>{formatNumber(count)}</div>
-            <div style={{ fontSize: 12, color: '#999' }}>
-              {`${percentage.toFixed(1)}%`}
-            </div>
-          </div>
-        );
-      },
-    },
-    {
       title: '达人数量',
       dataIndex: 'bloggerCount',
       key: 'bloggerCount',
@@ -384,6 +365,25 @@ export default function TagAnalysis({
         );
       },
     },
+    {
+      title: '笔记数量',
+      dataIndex: 'notesCount',
+      key: 'notesCount',
+      width: 100,
+      align: 'right',
+      render: (count: number, record: TagStats) => {
+        const percentage =
+          typeof record.notesPercentage === 'number' ? record.notesPercentage : 0;
+        return (
+          <div>
+            <div>{formatNumber(count)}</div>
+            <div style={{ fontSize: 12, color: '#999' }}>
+              {`${percentage.toFixed(1)}%`}
+            </div>
+          </div>
+        );
+      },
+    },    
     {
       title: '平均粉丝数',
       dataIndex: 'avgFans',

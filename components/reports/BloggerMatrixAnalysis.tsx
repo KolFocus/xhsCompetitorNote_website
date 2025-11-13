@@ -374,7 +374,7 @@ export default function BloggerMatrixAnalysis({
       width: 120,
       align: 'right',
       render: (value: number) => {
-        const amount = Number.isFinite(value) ? Number(value) : 0;
+        const amount = Number.isFinite(value) ? Math.round(value) : 0;
         return (
           <div>
             <div>{formatNumber(amount)}</div>
