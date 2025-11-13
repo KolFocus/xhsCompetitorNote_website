@@ -64,7 +64,8 @@ const getProxiedImageUrl = (url: string | null | undefined): string | undefined 
   
   // 如果是相对路径，直接返回（不需要代理）
   if (url.startsWith('/')) {
-    return url;
+    url = 'https:'+url
+    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
   }
   
   // 外部 URL 通过代理访问

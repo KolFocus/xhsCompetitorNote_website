@@ -61,10 +61,15 @@ const { Option } = Select;
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
 
 const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
+  console.log('song getProxiedImageUrl url', url);
   if (!url) return undefined;
   if (url.includes('xhstool.cc/api/proxy')) return url;
-  if (url.startsWith('/')) return url;
-  return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
+  if (url.startsWith('/')) {
+    url = 'https:'+url
+    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
+  }
+  else
+    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
 };
 
 interface Report {
@@ -210,7 +215,7 @@ export default function ReportsPage() {
 
   const loadNotes = async () => {
     if (!reportId) return;
-    
+
     try {
       setNotesLoading(true);
       const params = new URLSearchParams({
@@ -330,7 +335,7 @@ export default function ReportsPage() {
       e.preventDefault();
       e.stopPropagation();
     }
-    
+
     if (sortField === field) {
       // 如果点击的是当前排序字段，切换排序方向
       setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
@@ -377,7 +382,7 @@ export default function ReportsPage() {
       width: 100,
       fixed: 'left',
       render: (image: string | null, record: Note) => (
-        <div style={{ 
+        <div style={{
           width: 60,
           height: 80,
           position: 'relative',
@@ -424,14 +429,14 @@ export default function ReportsPage() {
       render: (text: string, record: Note) => {
         const content = record.content?.trim() || '';
         const tooltipContent = content ? (
-          <div 
+          <div
             className="tooltip-scrollable"
-            style={{ 
-              maxWidth: 400, 
-              maxHeight: 300, 
+            style={{
+              maxWidth: 400,
+              maxHeight: 300,
               overflow: 'auto',
-              whiteSpace: 'pre-wrap', 
-              wordBreak: 'break-word' 
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word'
             }}
           >
             {content}
@@ -819,7 +824,7 @@ export default function ReportsPage() {
                       </Space>
                     }
                     value={0}
-                    formatter={() => 
+                    formatter={() =>
                       reportDetail.earliestNoteTime && reportDetail.latestNoteTime
                         ? `${dayjs(reportDetail.earliestNoteTime).format('YYYY-MM-DD')} 至 ${dayjs(reportDetail.latestNoteTime).format('YYYY-MM-DD')}`
                         : '-'
