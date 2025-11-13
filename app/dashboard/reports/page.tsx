@@ -49,6 +49,7 @@ import 'dayjs/locale/zh-cn';
 import CreateReportModal from '@/components/reports/CreateReportModal';
 import AddNotesModal from '@/components/reports/AddNotesModal';
 import BloggerMatrixAnalysis from '@/components/reports/BloggerMatrixAnalysis';
+import TagAnalysis from '@/components/reports/TagAnalysis';
 import { useRouter } from 'next/navigation';
 
 dayjs.locale('zh-cn');
@@ -833,6 +834,16 @@ export default function ReportsPage() {
           {reportId && (
             <div style={{ marginBottom: 24 }}>
               <BloggerMatrixAnalysis
+                reportId={reportId}
+                refreshKey={analysisRefreshKey}
+              />
+            </div>
+          )}
+
+          {/* 基于内容标签的笔记分析区域 */}
+          {reportId && (
+            <div style={{ marginBottom: 24 }}>
+              <TagAnalysis
                 reportId={reportId}
                 refreshKey={analysisRefreshKey}
               />

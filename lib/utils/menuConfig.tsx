@@ -6,6 +6,8 @@ import {
   FileTextOutlined,
   TagsOutlined,
   BarChartOutlined,
+  TagOutlined,
+  AppstoreOutlined,
 } from '@ant-design/icons';
 import { MenuItem } from '../types';
 
@@ -21,6 +23,25 @@ export const menuItems: MenuItem[] = [
     label: '品牌列表',
     icon: <TagsOutlined />,
     path: '/dashboard/brands',
+  },
+  {
+    key: 'content-tag',
+    label: '内容标签',
+    icon: <TagOutlined />,
+    children: [
+      {
+        key: 'content-tag-management',
+        label: '标签管理',
+        icon: <AppstoreOutlined />,
+        path: '/dashboard/tags',
+      },
+      {
+        key: 'content-tag-note-tagging',
+        label: '笔记标签',
+        icon: <TagsOutlined />,
+        path: '/dashboard/notes/tagging',
+      },
+    ],
   },
   {
     key: 'reports',
