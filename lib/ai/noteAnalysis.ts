@@ -48,12 +48,13 @@ const normalizeUrl = (value: string | null | undefined): string | null => {
 export const collectMediaUrls = (note: NoteRecord): string[] => {
   const urlSet = new Set<string>();
 
-  // 处理 XhsImages：逗号分隔的图片链接集合
+  // 处理 XhsImages：逗号分隔的图片链接集合，只取前 12 个
   if (note.XhsImages && typeof note.XhsImages === 'string') {
     const imageUrls = note.XhsImages
       .split(',')
       .map((url) => url.trim())
-      .filter((url) => url.length > 0);
+      .filter((url) => url.length > 0)
+      .slice(0, 12); // 只取前 12 个链接
 
     for (const url of imageUrls) {
       const normalized = normalizeUrl(url);
@@ -150,7 +151,7 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
   const rawJsonBlock = match[0];
   // 去除 ^DT^ 标记
   let jsonPayload = rawJsonBlock.replace(/\^DT\^/g, '').trim();
-  
+
   // 去除可能的代码块标记（```json 和 ```）
   jsonPayload = jsonPayload.replace(/^```json\s*/i, '').replace(/\s*```$/g, '').trim();
 
@@ -212,8 +213,9 @@ export const fetchNextPendingNote = async (
   const query = supabase
     .from('qiangua_note_info')
     .select('*')
-    .not('XhsNoteUrl', 'is', null)
-    .or('AiStatus.eq.待分析')
+    .not('XhsNoteLink', 'is', null)
+    .eq('AiStatus', '待分析')
+    .lt('CreatedAt', new Date().toISOString())
     .order('CreatedAt', { ascending: true })
     .limit(1);
 

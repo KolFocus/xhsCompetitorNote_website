@@ -12,8 +12,10 @@ import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
 const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
 const AI_MODEL = 'gemini-2.0-flash';
+const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic'; // 禁用缓存，确保每次请求都执行
 
 const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
   const content: Array<Record<string, any>> = [
@@ -85,6 +87,18 @@ const extractMessageText = (responseBody: any): string => {
   throw new Error('AI 响应 content 类型未知');
 };
 
+// 创建带缓存控制的响应
+const createResponse = (data: any, status: number = 200) => {
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+  });
+};
+
 const markAnalysisStatus = async (
   noteId: string,
   nextStatus: string,
@@ -112,7 +126,8 @@ const lockNoteForAnalysis = async (note: NoteRecord) => {
   let query = supabase
     .from('qiangua_note_info')
     .update({ AiStatus: '分析中' })
-    .eq('NoteId', note.NoteId);
+    .eq('NoteId', note.NoteId)
+    .lt('CreatedAt', new Date().toISOString());
 
   if (note.AiStatus === null || note.AiStatus === undefined) {
     query = query.is('AiStatus', null);
@@ -132,12 +147,13 @@ const lockNoteForAnalysis = async (note: NoteRecord) => {
 };
 
 const processAiAnalysis = async (note: NoteRecord) => {
+  console.log('song processAiAnalysis begin')
   const supabase = getServiceSupabaseClient();
 
   try {
     const mediaUrls = collectMediaUrls(note);
     const prompt = buildNoteAnalysisPrompt(note);
-
+    console.log('song processAiAnalysis 01')
     const aiResponse = await fetch(AI_API_URL, {
       method: 'POST',
       headers: {
@@ -146,7 +162,6 @@ const processAiAnalysis = async (note: NoteRecord) => {
       },
       body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
     });
-
     if (!aiResponse.ok) {
       let errorText: string | null = null;
       try {
@@ -154,7 +169,7 @@ const processAiAnalysis = async (note: NoteRecord) => {
       } catch {
         errorText = aiResponse.statusText;
       }
-
+      console.log('song processAiAnalysis err:', errorText)
       throw new Error(
         `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
       );
@@ -164,11 +179,13 @@ const processAiAnalysis = async (note: NoteRecord) => {
     let responseText: string;
     try {
       responseText = await aiResponse.text();
+      console.log('song processAiAnalysis responseText:', responseText)
       responseBody = JSON.parse(responseText);
+      console.log('song processAiAnalysis 03')
     } catch (error: any) {
       throw new Error(`AI 接口响应解析失败: ${error.message}`);
     }
-
+    console.log('song processAiAnalysis end')
     const messageText = extractMessageText(responseBody);
     const aiResult = parseAiResponseContent(messageText);
 
@@ -182,7 +199,6 @@ const processAiAnalysis = async (note: NoteRecord) => {
         AiJson: responseText,
       })
       .eq('NoteId', note.NoteId);
-
     if (updateError) {
       throw new Error(
         `写入笔记 ${note.NoteId} AI 分析结果失败: ${
@@ -191,7 +207,6 @@ const processAiAnalysis = async (note: NoteRecord) => {
       );
     }
   } catch (error: any) {
-    console.error(`AI 分析笔记 ${note.NoteId} 失败:`, error);
     try {
       await markAnalysisStatus(note.NoteId, '分析失败', {
         AiSummary: null,
@@ -216,11 +231,14 @@ export async function GET() {
     const {
       data: inProgress,
       error: inProgressError,
+      count: inProgressCount,
     } = await supabase
       .from('qiangua_note_info')
-      .select('NoteId')
+      .select('NoteId', { count: 'exact' })
       .eq('AiStatus', '分析中')
-      .limit(1);
+      .lt('CreatedAt', new Date().toISOString());
+
+    console.log('song inProgressCount：', inProgressCount)
 
     if (inProgressError) {
       throw new Error(
@@ -228,18 +246,20 @@ export async function GET() {
       );
     }
 
-    if (Array.isArray(inProgress) && inProgress.length > 0) {
-      return NextResponse.json({
+    const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
+
+    if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
+      return createResponse({
         success: true,
         data: null,
-        message: '存在分析中的笔记，跳过本次任务',
+        message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
       });
     }
 
     currentNote = await fetchNextPendingNote(supabase);
 
     if (!currentNote) {
-      return NextResponse.json({
+      return createResponse({
         success: true,
         data: null,
         message: '暂无待分析笔记',
@@ -254,7 +274,7 @@ export async function GET() {
     });
 
     // 立即返回成功响应
-    return NextResponse.json({
+    return createResponse({
       success: true,
       data: {
         noteId: currentNote.NoteId,
@@ -265,12 +285,12 @@ export async function GET() {
     console.error('AI note analysis failed:', error);
 
     if (error?.message?.includes('笔记') && error?.message?.includes('处理')) {
-      return NextResponse.json(
+      return createResponse(
         {
           success: false,
           error: error.message,
         },
-        { status: 409 },
+        409,
       );
     }
 
@@ -290,12 +310,12 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json(
+    return createResponse(
       {
         success: false,
         error: error?.message ?? 'AI 分析失败',
       },
-      { status: 500 },
+      500,
     );
   }
 }
