@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const items = (data || []).map(mapTagSet);
+    const items = ((data || []) as unknown as RawTagSet[]).map(mapTagSet);
 
     return NextResponse.json({
       success: true,
@@ -180,8 +180,8 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedTagNames = tagsInput
-      .map((item) => normalizeName(item))
-      .filter((name) => name.length > 0);
+      .map((item: unknown) => normalizeName(item))
+      .filter((name: string) => name.length > 0);
 
     for (const tagName of normalizedTagNames) {
       validateName(

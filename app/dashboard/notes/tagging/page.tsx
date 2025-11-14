@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic';
 
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef, Suspense } from 'react';
 import {
   Avatar,
   Button,
@@ -758,5 +758,13 @@ const NoteTaggingPage: React.FC = () => {
   );
 };
 
-export default NoteTaggingPage;
+const NoteTaggingPageWithSuspense = () => {
+  return (
+    <Suspense fallback={<div style={{ padding: 24 }}>加载中...</div>}>
+      <NoteTaggingPage />
+    </Suspense>
+  );
+};
+
+export default NoteTaggingPageWithSuspense;
 

@@ -29,9 +29,9 @@ export async function POST(request: NextRequest) {
     const tagSetId = normalizeId(body.tagSetId);
     const tagIds = Array.isArray(body.tagIds)
       ? body.tagIds
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
+          .filter((item: unknown): item is string => typeof item === 'string')
+          .map((item: string) => item.trim())
+          .filter((item: string) => item.length > 0)
       : [];
 
     if (!noteId) {
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     const tagLookup = new Map(tags.map((tag) => [tag.TagId, tag]));
-    const uniqueTagIds = Array.from(new Set(tagIds));
+    const uniqueTagIds: string[] = Array.from(new Set(tagIds));
 
     for (const tagId of uniqueTagIds) {
       if (!tagLookup.has(tagId)) {

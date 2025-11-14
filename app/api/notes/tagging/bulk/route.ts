@@ -38,16 +38,16 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const noteIds = Array.isArray(body.noteIds)
       ? body.noteIds
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
+          .filter((item: unknown): item is string => typeof item === 'string')
+          .map((item: string) => item.trim())
+          .filter((item: string) => item.length > 0)
       : [];
     const tagSetId = normalizeId(body.tagSetId);
     const tagIds = Array.isArray(body.tagIds)
       ? body.tagIds
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
+          .filter((item: unknown): item is string => typeof item === 'string')
+          .map((item: string) => item.trim())
+          .filter((item: string) => item.length > 0)
       : [];
 
     if (noteIds.length === 0) {
@@ -100,8 +100,8 @@ export async function POST(request: NextRequest) {
     }
 
     const tagLookup = new Map(tags.map((tag) => [tag.TagId, tag]));
-    const uniqueNoteIds = Array.from(new Set(noteIds));
-    const uniqueTagIds = Array.from(new Set(tagIds));
+    const uniqueNoteIds: string[] = Array.from(new Set(noteIds));
+    const uniqueTagIds: string[] = Array.from(new Set(tagIds));
 
     for (const tagId of uniqueTagIds) {
       if (!tagLookup.has(tagId)) {
@@ -176,9 +176,9 @@ export async function DELETE(request: NextRequest) {
     const body = await request.json();
     const noteIds = Array.isArray(body.noteIds)
       ? body.noteIds
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0)
+          .filter((item: unknown): item is string => typeof item === 'string')
+          .map((item: string) => item.trim())
+          .filter((item: string) => item.length > 0)
       : [];
     const tagSetId = normalizeId(body.tagSetId);
 
