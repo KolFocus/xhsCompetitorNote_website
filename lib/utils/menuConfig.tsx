@@ -18,12 +18,12 @@ export const menuItems: MenuItem[] = [
     icon: <FileTextOutlined />,
     path: '/dashboard/notes',
   },
-  {
-    key: 'brands-list',
-    label: '品牌列表',
-    icon: <TagsOutlined />,
-    path: '/dashboard/brands',
-  },
+  // {
+  //   key: 'brands-list',
+  //   label: '品牌列表',
+  //   icon: <TagsOutlined />,
+  //   path: '/dashboard/brands',
+  // },
   {
     key: 'content-tag',
     label: '内容标签',

@@ -9,6 +9,7 @@ import {
   Card,
   Col,
   Empty,
+  Image,
   message,
   Modal,
   Row,
@@ -24,6 +25,7 @@ import {
 import {
   ClearOutlined,
   DeleteOutlined,
+  LinkOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -45,17 +47,18 @@ const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
  */
 const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
   if (!url) return undefined;
-  
+
   // 如果已经是代理 URL，直接返回
   if (url.includes('xhstool.cc/api/proxy')) {
     return url;
   }
-  
+
   // 如果是相对路径，直接返回（不需要代理）
   if (url.startsWith('/')) {
-    return url;
+    url = 'https:'+url
+    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
   }
-  
+
   // 外部 URL 通过代理访问
   return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
 };
@@ -69,6 +72,11 @@ interface NoteRecord {
   BloggerNickName: string;
   BloggerSmallAvatar: string | null;
   BloggerId: string;
+  XhsContent: string | null;
+  XhsNoteLink: string | null;
+  AiContentType: string | null;
+  AiRelatedProducts: string | null;
+  AiSummary: string | null;
 }
 
 interface NotesResponse {
@@ -126,7 +134,7 @@ const NoteTaggingPage: React.FC = () => {
     tagSetId: undefined,
     reportId: undefined,
   });
-  
+
   // 新增筛选条件
   const [reports, setReports] = useState<Report[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -135,6 +143,7 @@ const NoteTaggingPage: React.FC = () => {
   const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
   const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | undefined>(undefined);
 
   const fetchTagSets = async () => {
     try {
@@ -351,7 +360,7 @@ const NoteTaggingPage: React.FC = () => {
   const filteredNotes = useMemo(() => {
     return noteList.filter((note) => {
       const assignedTags = noteTags[note.NoteId] || [];
-      
+
       // 标签筛选逻辑
       if (filterTagId === '__untagged__') {
         // 仅显示未打标笔记
@@ -365,7 +374,7 @@ const NoteTaggingPage: React.FC = () => {
         }
       }
       // filterTagId 为 null 时显示所有笔记
-      
+
       return true;
     });
   }, [noteList, noteTags, filterTagId]);
@@ -446,36 +455,103 @@ const NoteTaggingPage: React.FC = () => {
     });
   };
 
+  // 截断文本辅助函数
+  const truncateText = (text: string | null | undefined, maxLength: number): string => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + '...';
+  };
+
   const columns = [
     {
       title: '笔记',
       dataIndex: 'Title',
       key: 'title',
-      render: (value: string, record: NoteRecord) => (
-        <Space>
-          <Avatar src={getProxiedImageUrl(record.CoverImage)} shape="square" size={48}>
-            {value?.[0] || '图'}
-          </Avatar>
-          <div>
-            <Title level={5} style={{ marginBottom: 4 }}>
-              {value || '未命名笔记'}
-            </Title>
-            <Text type="secondary">
-              {record.BloggerNickName || '未知博主'}
-            </Text>
-          </div>
-        </Space>
-      ),
+      render: (value: string, record: NoteRecord) => {
+        const coverImageUrl = getProxiedImageUrl(record.CoverImage);
+        const noteContent = record.XhsContent || record.Content || '';
+
+        return (
+          <Space>
+            <div
+              style={{ cursor: coverImageUrl ? 'pointer' : 'default' }}
+              onClick={() => {
+                if (coverImageUrl) {
+                  setPreviewImage(coverImageUrl);
+                }
+              }}
+            >
+              <Avatar src={coverImageUrl} shape="square" size={48}>
+                {value?.[0] || '图'}
+              </Avatar>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <Tooltip
+                  title={noteContent ? <div style={{ maxWidth: 400, whiteSpace: 'pre-wrap' }}>{noteContent}</div> : null}
+                  placement="topLeft"
+                >
+                  <Title level={5} style={{ margin: 0, flex: 1 }}>
+                    {value || '未命名笔记'}
+                  </Title>
+                </Tooltip>
+                {record.XhsNoteLink && (
+                  <LinkOutlined
+                    style={{ color: '#1890ff', cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(record.XhsNoteLink!, '_blank');
+                    }}
+                  />
+                )}
+              </div>
+              <Text type="secondary">
+                {record.BloggerNickName || '未知博主'}
+              </Text>
+            </div>
+          </Space>
+        );
+      },
     },
     {
-      title: '发布时间',
-      dataIndex: 'PublishTime',
-      width: 160,
-      render: (value: string) =>
-        value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-',
+      title: 'AI分析结果',
+      key: 'aiAnalysis',
+      width: 450,
+      render: (_: unknown, record: NoteRecord) => {
+        const hasAiData = record.AiContentType || record.AiRelatedProducts || record.AiSummary;
+
+        if (!hasAiData) {
+          return <Text type="secondary">暂无分析</Text>;
+        }
+
+        return (
+          <Space direction="vertical" size={4} style={{ width: '100%' }}>
+            {record.AiContentType && (
+              <div>
+                <Text strong>内容场景：</Text>
+                <Tooltip title={record.AiContentType}>
+                  <Text>{truncateText(record.AiContentType, 8)}</Text>
+                </Tooltip>
+              </div>
+            )}
+            {record.AiRelatedProducts && (
+              <div>
+                <Text strong>相关产品：</Text>
+                <Text>{record.AiRelatedProducts}</Text>
+              </div>
+            )}
+            {record.AiSummary && (
+              <div>
+                <Text strong>内容总结：</Text>
+                <Text>{record.AiSummary}</Text>
+              </div>
+            )}
+          </Space>
+        );
+      },
     },
     {
-      title: '已打标签',
+      title: '当前标签',
       dataIndex: 'noteId',
       render: (_: unknown, record: NoteRecord) => {
         const assigned = noteTags[record.NoteId] || [];
@@ -483,11 +559,11 @@ const NoteTaggingPage: React.FC = () => {
           return <Text type="secondary">未打标</Text>;
         }
         return (
-          <Space wrap>
-            {assigned.map((tag) => (
-              <Tag key={tag.tagId}>{tag.tagName}</Tag>
-            ))}
-          </Space>
+            <Space wrap>
+              {assigned.map((tag) => (
+                  <Tag key={tag.tagId}>{tag.tagName}</Tag>
+              ))}
+            </Space>
         );
       },
     },
@@ -754,6 +830,22 @@ const NoteTaggingPage: React.FC = () => {
           </Text>
         </Space>
       </Modal>
+
+      <Image
+        width={0}
+        height={0}
+        style={{ display: 'none' }}
+        src={previewImage}
+        preview={{
+          visible: !!previewImage,
+          src: previewImage,
+          onVisibleChange: (visible) => {
+            if (!visible) {
+              setPreviewImage(undefined);
+            }
+          },
+        }}
+      />
     </div>
   );
 };
