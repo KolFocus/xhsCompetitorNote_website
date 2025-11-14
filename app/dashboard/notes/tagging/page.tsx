@@ -26,7 +26,9 @@ import {
   ClearOutlined,
   DeleteOutlined,
   LinkOutlined,
+  PictureOutlined,
   ReloadOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
@@ -77,6 +79,8 @@ interface NoteRecord {
   AiContentType: string | null;
   AiRelatedProducts: string | null;
   AiSummary: string | null;
+  NoteType: string;
+  VideoDuration: string | null;
 }
 
 interface NotesResponse {
@@ -365,13 +369,13 @@ const NoteTaggingPage: React.FC = () => {
       if (filterTagId === '__untagged__') {
         // 仅显示未打标笔记
         if (assignedTags.length > 0) {
-          return false;
-        }
+        return false;
+      }
       } else if (filterTagId) {
         // 显示指定标签的笔记
         if (!assignedTags.some((tag) => tag.tagId === filterTagId)) {
-          return false;
-        }
+        return false;
+      }
       }
       // filterTagId 为 null 时显示所有笔记
 
@@ -472,7 +476,7 @@ const NoteTaggingPage: React.FC = () => {
         const noteContent = record.XhsContent || record.Content || '';
 
         return (
-          <Space>
+        <Space>
             <div
               style={{ cursor: coverImageUrl ? 'pointer' : 'default' }}
               onClick={() => {
@@ -482,8 +486,8 @@ const NoteTaggingPage: React.FC = () => {
               }}
             >
               <Avatar src={coverImageUrl} shape="square" size={48}>
-                {value?.[0] || '图'}
-              </Avatar>
+            {value?.[0] || '图'}
+          </Avatar>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
@@ -505,11 +509,24 @@ const NoteTaggingPage: React.FC = () => {
                   />
                 )}
               </div>
-              <Text type="secondary">
-                {record.BloggerNickName || '未知博主'}
-              </Text>
+              <Space size="small" wrap style={{ marginTop: 4 }}>
+                {record.NoteType === 'video' ? (
+                  <Tag color="blue" icon={<VideoCameraOutlined />}>
+                    {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
+                  </Tag>
+                ) : (
+                  <Tag color="green" icon={<PictureOutlined />}>
+                    图文
+                  </Tag>
+                )}
+              </Space>
+              <div style={{ marginTop: 4 }}>
+                <Text type="secondary">
+                  {record.BloggerNickName || '未知博主'}
+                </Text>
+              </div>
             </div>
-          </Space>
+        </Space>
         );
       },
     },
@@ -559,11 +576,11 @@ const NoteTaggingPage: React.FC = () => {
           return <Text type="secondary">未打标</Text>;
         }
         return (
-            <Space wrap>
-              {assigned.map((tag) => (
-                  <Tag key={tag.tagId}>{tag.tagName}</Tag>
-              ))}
-            </Space>
+          <Space wrap>
+            {assigned.map((tag) => (
+              <Tag key={tag.tagId}>{tag.tagName}</Tag>
+            ))}
+          </Space>
         );
       },
     },
@@ -593,23 +610,23 @@ const NoteTaggingPage: React.FC = () => {
     <div style={{ padding: 24 }}>
       <Space direction="vertical" style={{ width: '100%' }} size="large">
         <Card>
-          <Space direction="vertical" size={4} style={{ width: '100%' }}>
-            <Text type="secondary">标签系列</Text>
-            <Select
-              showSearch
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Text type="secondary">标签系列</Text>
+                <Select
+                  showSearch
               style={{ width: '100%', maxWidth: 400 }}
-              placeholder="请选择标签系列"
-              value={selectedTagSetId || undefined}
-              onChange={(value) => setSelectedTagSetId(value)}
-              options={tagSets.map((tagSet) => ({
-                label: `${tagSet.tagSetName} ${
-                  tagSet.type === 'system' ? '(系统)' : ''
-                }`,
-                value: tagSet.tagSetId,
-              }))}
-              loading={loading}
-            />
-          </Space>
+                  placeholder="请选择标签系列"
+                  value={selectedTagSetId || undefined}
+                  onChange={(value) => setSelectedTagSetId(value)}
+                  options={tagSets.map((tagSet) => ({
+                    label: `${tagSet.tagSetName} ${
+                      tagSet.type === 'system' ? '(系统)' : ''
+                    }`,
+                    value: tagSet.tagSetId,
+                  }))}
+                  loading={loading}
+                />
+              </Space>
         </Card>
 
         <Card>
@@ -702,25 +719,25 @@ const NoteTaggingPage: React.FC = () => {
               <div style={{ marginBottom: 8 }}>
                 <strong>标签筛选：</strong>
               </div>
-              <Select
+                <Select
                 style={{ width: '100%' }}
-                allowClear
-                placeholder="选择标签"
-                options={tagOptions}
-                value={filterTagId || undefined}
-                onChange={(value) => setFilterTagId(value || null)}
-                disabled={!currentTagSet}
-              />
+                  allowClear
+                  placeholder="选择标签"
+                  options={tagOptions}
+                  value={filterTagId || undefined}
+                  onChange={(value) => setFilterTagId(value || null)}
+                  disabled={!currentTagSet}
+                />
             </Col>
 
             <Col xs={24} sm={12} md={6}>
               <div style={{ marginBottom: 8 }}>&nbsp;</div>
-              <Space>
+                <Space>
                 <Button icon={<ReloadOutlined />} onClick={() => loadNotes(page)}>
-                  刷新
-                </Button>
-                <Button
-                  onClick={() => {
+                      刷新
+                    </Button>
+                    <Button
+                      onClick={() => {
                     setSelectedReportId(undefined);
                     setSelectedBrand(undefined);
                     setSelectedBlogger(undefined);
@@ -729,12 +746,12 @@ const NoteTaggingPage: React.FC = () => {
                     setPage(1);
                     // 重置后重新加载笔记
                     setTimeout(() => {
-                      loadNotes(1, pageSize);
+                        loadNotes(1, pageSize);
                     }, 0);
-                  }}
-                >
-                  重置
-                </Button>
+                      }}
+                    >
+                      重置
+                    </Button>
               </Space>
             </Col>
           </Row>
