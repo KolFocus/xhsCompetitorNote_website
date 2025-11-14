@@ -476,40 +476,65 @@ const NoteTaggingPage: React.FC = () => {
         const noteContent = record.XhsContent || record.Content || '';
 
         return (
-        <Space>
+          <div style={{ width: 180 }}>
+            {/* 图片 */}
             <div
-              style={{ cursor: coverImageUrl ? 'pointer' : 'default' }}
+              style={{
+                width: 180,
+                height: 240,
+                cursor: coverImageUrl ? 'pointer' : 'default',
+                marginBottom: 8,
+                overflow: 'hidden',
+                borderRadius: 4,
+                backgroundColor: '#f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
               onClick={() => {
                 if (coverImageUrl) {
                   setPreviewImage(coverImageUrl);
                 }
               }}
             >
-              <Avatar src={coverImageUrl} shape="square" size={48}>
-            {value?.[0] || '图'}
-          </Avatar>
+              {coverImageUrl ? (
+                <Image
+                  src={coverImageUrl}
+                  alt={value || '笔记封面'}
+                  width={180}
+                  height={240}
+                  style={{ objectFit: 'cover' }}
+                  preview={false}
+                />
+              ) : (
+                <Text type="secondary">无封面</Text>
+              )}
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <Tooltip
-                  title={noteContent ? <div style={{ maxWidth: 400, whiteSpace: 'pre-wrap' }}>{noteContent}</div> : null}
-                  placement="topLeft"
-                >
-                  <Title level={5} style={{ margin: 0, flex: 1 }}>
-                    {value || '未命名笔记'}
-                  </Title>
-                </Tooltip>
-                {record.XhsNoteLink && (
-                  <LinkOutlined
-                    style={{ color: '#1890ff', cursor: 'pointer' }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      window.open(record.XhsNoteLink!, '_blank');
-                    }}
-                  />
-                )}
-              </div>
-              <Space size="small" wrap style={{ marginTop: 4 }}>
+
+            {/* 标题+笔记链接 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Tooltip
+                title={noteContent ? <div style={{ maxWidth: 400, whiteSpace: 'pre-wrap' }}>{noteContent}</div> : null}
+                placement="topLeft"
+              >
+                <Title level={5} style={{ margin: 0, flex: 1, fontSize: 14 }}>
+              {value || '未命名笔记'}
+            </Title>
+              </Tooltip>
+              {record.XhsNoteLink && (
+                <LinkOutlined
+                  style={{ color: '#1890ff', cursor: 'pointer', flexShrink: 0 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(record.XhsNoteLink!, '_blank');
+                  }}
+                />
+              )}
+            </div>
+
+            {/* 笔记类型和达人名称 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Space size="small" wrap>
                 {record.NoteType === 'video' ? (
                   <Tag color="blue" icon={<VideoCameraOutlined />}>
                     {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
@@ -520,13 +545,11 @@ const NoteTaggingPage: React.FC = () => {
                   </Tag>
                 )}
               </Space>
-              <div style={{ marginTop: 4 }}>
-                <Text type="secondary">
-                  {record.BloggerNickName || '未知博主'}
-                </Text>
-              </div>
+              <Text type="secondary" style={{ fontSize: 14 }}>
+              {record.BloggerNickName || '未知博主'}
+            </Text>
             </div>
-        </Space>
+          </div>
         );
       },
     },
@@ -542,28 +565,30 @@ const NoteTaggingPage: React.FC = () => {
         }
 
         return (
-          <Space direction="vertical" size={4} style={{ width: '100%' }}>
-            {record.AiContentType && (
-              <div>
-                <Text strong>内容场景：</Text>
-                <Tooltip title={record.AiContentType}>
-                  <Text>{truncateText(record.AiContentType, 8)}</Text>
-                </Tooltip>
-              </div>
-            )}
-            {record.AiRelatedProducts && (
-              <div>
-                <Text strong>相关产品：</Text>
-                <Text>{record.AiRelatedProducts}</Text>
-              </div>
-            )}
-            {record.AiSummary && (
-              <div>
-                <Text strong>内容总结：</Text>
-                <Text>{record.AiSummary}</Text>
-              </div>
-            )}
-          </Space>
+          <div style={{ marginTop: '-8px', paddingTop: 0 }}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              {record.AiContentType && (
+                <div>
+                  <Text strong style={{ fontSize: 16 }}>内容场景：</Text>
+                  <Tooltip title={record.AiContentType}>
+                    <Text style={{ fontSize: 16 }}>{truncateText(record.AiContentType, 8)}</Text>
+                  </Tooltip>
+                </div>
+              )}
+              {record.AiRelatedProducts && (
+                <div>
+                  <Text strong style={{ fontSize: 16 }}>相关产品：</Text>
+                  <Text style={{ fontSize: 16 }}>{record.AiRelatedProducts}</Text>
+                </div>
+              )}
+              {record.AiSummary && (
+                <div>
+                  <Text strong style={{ fontSize: 16 }}>内容总结：</Text>
+                  <Text style={{ fontSize: 16 }}>{record.AiSummary}</Text>
+                </div>
+              )}
+            </Space>
+          </div>
         );
       },
     },
