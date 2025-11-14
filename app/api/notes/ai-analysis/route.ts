@@ -12,7 +12,6 @@ import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
 const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
 const AI_MODEL = 'gemini-2.0-flash';
-const AI_REQUEST_TIMEOUT_MS = 60_000;
 
 export const runtime = 'nodejs';
 
@@ -33,7 +32,7 @@ const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
     });
   }
 
-  return {
+  const req = {
     model: AI_MODEL,
     messages: [
       {
@@ -42,6 +41,8 @@ const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
       },
     ],
   };
+
+  return req
 };
 
 const extractMessageText = (responseBody: any): string => {
@@ -130,7 +131,84 @@ const lockNoteForAnalysis = async (note: NoteRecord) => {
   }
 };
 
-export async function POST() {
+const processAiAnalysis = async (note: NoteRecord) => {
+  const supabase = getServiceSupabaseClient();
+
+  try {
+    const mediaUrls = collectMediaUrls(note);
+    const prompt = buildNoteAnalysisPrompt(note);
+
+    const aiResponse = await fetch(AI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AI_API_TOKEN}`,
+      },
+      body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
+    });
+
+    if (!aiResponse.ok) {
+      let errorText: string | null = null;
+      try {
+        errorText = await aiResponse.text();
+      } catch {
+        errorText = aiResponse.statusText;
+      }
+
+      throw new Error(
+        `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
+      );
+    }
+
+    let responseBody: any;
+    let responseText: string;
+    try {
+      responseText = await aiResponse.text();
+      responseBody = JSON.parse(responseText);
+    } catch (error: any) {
+      throw new Error(`AI 接口响应解析失败: ${error.message}`);
+    }
+
+    const messageText = extractMessageText(responseBody);
+    const aiResult = parseAiResponseContent(messageText);
+
+    const { error: updateError } = await supabase
+      .from('qiangua_note_info')
+      .update({
+        AiStatus: '分析成功',
+        AiSummary: aiResult.summary,
+        AiContentType: aiResult.contentType,
+        AiRelatedProducts: aiResult.relatedProducts,
+        AiJson: responseText,
+      })
+      .eq('NoteId', note.NoteId);
+
+    if (updateError) {
+      throw new Error(
+        `写入笔记 ${note.NoteId} AI 分析结果失败: ${
+          updateError.message ?? '未知错误'
+        }`,
+      );
+    }
+  } catch (error: any) {
+    console.error(`AI 分析笔记 ${note.NoteId} 失败:`, error);
+    try {
+      await markAnalysisStatus(note.NoteId, '分析失败', {
+        AiSummary: null,
+        AiContentType: null,
+        AiRelatedProducts: null,
+        AiJson: null,
+      });
+    } catch (statusError) {
+      console.error(
+        `Failed to mark note ${note.NoteId} as 分析失败:`,
+        statusError,
+      );
+    }
+  }
+};
+
+export async function GET() {
   const supabase = getServiceSupabaseClient();
   let currentNote: NoteRecord | null = null;
 
@@ -170,86 +248,17 @@ export async function POST() {
 
     await lockNoteForAnalysis(currentNote);
 
-    const mediaUrls = collectMediaUrls(currentNote);
-    const prompt = buildNoteAnalysisPrompt(currentNote, mediaUrls);
+    // 发起 AI 分析请求，不等待结果，在后台异步处理
+    processAiAnalysis(currentNote).catch((error) => {
+      console.error(`异步处理 AI 分析失败:`, error);
+    });
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(
-      () => controller.abort(),
-      AI_REQUEST_TIMEOUT_MS,
-    );
-
-    let aiResponse;
-    try {
-      aiResponse = await fetch(AI_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${AI_API_TOKEN}`,
-        },
-        body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
-        signal: controller.signal,
-      });
-    } catch (error: any) {
-      if (error?.name === 'AbortError') {
-        throw new Error('AI 请求超时');
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-
-    if (!aiResponse.ok) {
-      let errorText: string | null = null;
-      try {
-        errorText = await aiResponse.text();
-      } catch {
-        errorText = aiResponse.statusText;
-      }
-
-      throw new Error(
-        `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
-      );
-    }
-
-    let responseBody: any;
-    try {
-      responseBody = await aiResponse.json();
-    } catch (error: any) {
-      throw new Error(`AI 接口响应解析失败: ${error.message}`);
-    }
-
-    const messageText = extractMessageText(responseBody);
-    const aiResult = parseAiResponseContent(messageText);
-
-    const { error: updateError } = await supabase
-      .from('qiangua_note_info')
-      .update({
-        AiStatus: '分析成功',
-        AiSummary: aiResult.summary,
-        AiContentType: aiResult.contentType,
-        AiRelatedProducts: aiResult.relatedProducts,
-        AiJson: aiResult.rawJsonBlock,
-      })
-      .eq('NoteId', currentNote.NoteId);
-
-    if (updateError) {
-      throw new Error(
-        `写入笔记 ${currentNote.NoteId} AI 分析结果失败: ${
-          updateError.message ?? '未知错误'
-        }`,
-      );
-    }
-
+    // 立即返回成功响应
     return NextResponse.json({
       success: true,
       data: {
         noteId: currentNote.NoteId,
-        summary: aiResult.summary,
-        contentType: aiResult.contentType,
-        relatedProducts: aiResult.relatedProducts,
-        aiJson: aiResult.rawJsonBlock,
-        mediaCount: mediaUrls.length,
+        message: 'AI 分析任务已启动，正在后台处理',
       },
     });
   } catch (error: any) {

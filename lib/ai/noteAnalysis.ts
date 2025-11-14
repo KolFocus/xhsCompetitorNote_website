@@ -4,10 +4,12 @@ import { fixImageUrl } from '@/lib/utils/dataTransform';
 
 export interface NoteRecord extends Record<string, any> {
   NoteId: string;
-  Title?: string | null;
-  Content?: string | null;
-  CoverImage?: string | null;
+  XhsNoteId?: string | null;
   XhsNoteUrl?: string | null;
+  XhsTitle?: string | null;
+  XhsContent?: string | null;
+  XhsImages?: string | null;
+  XhsVideo?: string | null;
   AiStatus?: string | null;
   CreatedAt?: string | null;
 }
@@ -18,31 +20,6 @@ export interface AiAnalysisResult {
   relatedProducts: string;
   rawJsonBlock: string;
 }
-
-const MEDIA_CANDIDATE_FIELDS = [
-  'MaterialUrls',
-  'MaterialUrlList',
-  'MediaUrls',
-  'MediaUrlList',
-  'MaterialList',
-  'ImageUrls',
-  'ImageUrlList',
-  'ImageList',
-  'ImageListJson',
-  'Images',
-  'Pictures',
-  'Assets',
-  'VideoUrl',
-  'VideoCover',
-  'VideoCoverUrl',
-  'VideoPoster',
-  'VideoThumbnail',
-  'VideoScreenshot',
-  'VideoPreviewUrl',
-  'CoverImage',
-] as const;
-
-const POSSIBLE_URL_KEYS = ['url', 'Url', 'URL', 'image_url', 'imageUrl', 'imageURL', 'source', 'src'] as const;
 
 const isHttpUrl = (value: string): boolean => /^https?:\/\//i.test(value);
 
@@ -68,47 +45,29 @@ const normalizeUrl = (value: string | null | undefined): string | null => {
   return isHttpUrl(trimmed) ? trimmed : null;
 };
 
-const extractUrlsFromValue = (value: unknown, urls: Set<string>) => {
-  if (!value) {
-    return;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = normalizeUrl(value);
-    if (normalized) {
-      urls.add(normalized);
-    }
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      extractUrlsFromValue(item, urls);
-    }
-    return;
-  }
-
-  if (typeof value === 'object') {
-    for (const key of POSSIBLE_URL_KEYS) {
-      if (
-        Object.prototype.hasOwnProperty.call(value, key) &&
-        typeof (value as Record<string, any>)[key] === 'string'
-      ) {
-        const normalized = normalizeUrl((value as Record<string, any>)[key]);
-        if (normalized) {
-          urls.add(normalized);
-        }
-      }
-    }
-  }
-};
-
 export const collectMediaUrls = (note: NoteRecord): string[] => {
   const urlSet = new Set<string>();
 
-  for (const field of MEDIA_CANDIDATE_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(note, field)) {
-      extractUrlsFromValue((note as Record<string, unknown>)[field], urlSet);
+  // 处理 XhsImages：逗号分隔的图片链接集合
+  if (note.XhsImages && typeof note.XhsImages === 'string') {
+    const imageUrls = note.XhsImages
+      .split(',')
+      .map((url) => url.trim())
+      .filter((url) => url.length > 0);
+
+    for (const url of imageUrls) {
+      const normalized = normalizeUrl(url);
+      if (normalized) {
+        urlSet.add(normalized);
+      }
+    }
+  }
+
+  // 处理 XhsVideo：视频链接（可能为空）
+  if (note.XhsVideo && typeof note.XhsVideo === 'string') {
+    const normalized = normalizeUrl(note.XhsVideo);
+    if (normalized) {
+      urlSet.add(normalized);
     }
   }
 
@@ -117,21 +76,15 @@ export const collectMediaUrls = (note: NoteRecord): string[] => {
 
 export const buildNoteAnalysisPrompt = (
   note: NoteRecord,
-  mediaUrls: string[],
 ): string => {
   const title =
-    typeof note.Title === 'string' && note.Title.trim().length > 0
-      ? note.Title
+    typeof note.XhsTitle === 'string' && note.XhsTitle.trim().length > 0
+      ? note.XhsTitle
       : '（无标题）';
   const body =
-    typeof note.Content === 'string' && note.Content.length > 0
-      ? note.Content
+    typeof note.XhsContent === 'string' && note.XhsContent.length > 0
+      ? note.XhsContent
       : '（无正文）';
-
-  const visuals =
-    mediaUrls.length > 0
-      ? mediaUrls.map((url, index) => `    - 素材${index + 1}: ${url}`).join('\n')
-      : '    - 暂无可用素材链接';
 
   return [
     '### **# 角色定义**',
@@ -144,8 +97,7 @@ export const buildNoteAnalysisPrompt = (
     '我将为你提供以下一项或多项组合信息：',
     `1.  **笔记标题 (Title)**: ${title}`,
     `2.  **正文内容 (Body Text)**: ${body}`,
-    '3.  **图片或视频 (Visuals)**',
-    visuals,
+    '3.  **图片或视频 (Visuals)** [通过特定结构设置]',
     '',
     '### **# 核心分析维度**',
     '1.  **用户痛点**：笔记精准打击了用户的哪些焦虑、烦恼或不满？',
@@ -171,17 +123,16 @@ export const buildNoteAnalysisPrompt = (
     '    从正文和图片/视频中，提炼出所有被提及或暗示的相关产品。如果多于一个，请使用**英文逗号 (,)** 进行串接，形成一个**单一的字符串**。',
     '',
     '#### **特别强调：**',
+    '请严格遵循以下输出格式和字段不要添加任何其他字段，但要保证同时出现 summary、contentType、relatedProducts这三个字段。',
     '你**只**输出给我下面格式的数据。所有输出内容必须是一个**合法**的JSON对象，并使用 `^DT^` 进行包裹，方便后续进行程序化解析。',
     '',
     '**输出格式如下：**',
     '^DT^',
-    '[',
     '  {',
     '    "summary": "内容洞察总结",',
     '    "contentType": "内容类型",',
     '    "relatedProducts": "XX品牌维C精华,XX品牌视黄醇面霜"',
     '  }',
-    ']',
     '^DT^',
   ].join('\n');
 };
@@ -197,7 +148,11 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
   }
 
   const rawJsonBlock = match[0];
-  const jsonPayload = rawJsonBlock.replace(/\^DT\^/g, '').trim();
+  // 去除 ^DT^ 标记
+  let jsonPayload = rawJsonBlock.replace(/\^DT\^/g, '').trim();
+  
+  // 去除可能的代码块标记（```json 和 ```）
+  jsonPayload = jsonPayload.replace(/^```json\s*/i, '').replace(/\s*```$/g, '').trim();
 
   let parsed: unknown;
   try {
@@ -206,18 +161,13 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
     throw new Error(`AI 响应 JSON 解析失败: ${(error as Error).message}`);
   }
 
-  if (!Array.isArray(parsed) || parsed.length === 0) {
-    throw new Error('AI 响应 JSON 不符合预期数组结构');
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('AI 响应 JSON 不符合预期对象结构');
   }
 
-  const first = parsed[0] ?? {};
-  if (typeof first !== 'object' || first === null) {
-    throw new Error('AI 响应 JSON 第一个元素不是对象');
-  }
-
-  const summary = (first as Record<string, unknown>).summary;
-  const contentType = (first as Record<string, unknown>).contentType;
-  const relatedProductsRaw = (first as Record<string, unknown>).relatedProducts;
+  const summary = (parsed as Record<string, unknown>).summary;
+  const contentType = (parsed as Record<string, unknown>).contentType;
+  const relatedProductsRaw = (parsed as Record<string, unknown>).relatedProducts;
 
   const normalizedSummary =
     typeof summary === 'string' ? summary.trim() : String(summary ?? '');
@@ -263,7 +213,7 @@ export const fetchNextPendingNote = async (
     .from('qiangua_note_info')
     .select('*')
     .not('XhsNoteUrl', 'is', null)
-    .or('AiStatus.eq.待分析,AiStatus.is.null')
+    .or('AiStatus.eq.待分析')
     .order('CreatedAt', { ascending: true })
     .limit(1);
 
