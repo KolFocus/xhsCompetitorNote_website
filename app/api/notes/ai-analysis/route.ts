@@ -235,10 +235,7 @@ export async function GET() {
     } = await supabase
       .from('qiangua_note_info')
       .select('NoteId', { count: 'exact' })
-      .eq('AiStatus', '分析中')
-      .lt('CreatedAt', new Date().toISOString());
-
-    console.log('song inProgressCount：', inProgressCount)
+      .eq('AiStatus', '分析中');
 
     if (inProgressError) {
       throw new Error(
@@ -246,41 +243,47 @@ export async function GET() {
       );
     }
 
-    const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
-
-    if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
-      return createResponse({
-        success: true,
-        data: null,
-        message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
-      });
-    }
-
-    currentNote = await fetchNextPendingNote(supabase);
-
-    if (!currentNote) {
-      return createResponse({
-        success: true,
-        data: null,
-        message: '暂无待分析笔记',
-      });
-    }
-
-    await lockNoteForAnalysis(currentNote);
-
-    // 发起 AI 分析请求，不等待结果，在后台异步处理
-    processAiAnalysis(currentNote).catch((error) => {
-      console.error(`异步处理 AI 分析失败:`, error);
-    });
-
-    // 立即返回成功响应
     return createResponse({
       success: true,
-      data: {
-        noteId: currentNote.NoteId,
-        message: 'AI 分析任务已启动，正在后台处理',
-      },
+      data: null,
+      message: '暂无待分析笔记',
     });
+
+    // const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
+    //
+    // if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
+    //   return createResponse({
+    //     success: true,
+    //     data: null,
+    //     message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
+    //   });
+    // }
+    //
+    // currentNote = await fetchNextPendingNote(supabase);
+    //
+    // if (!currentNote) {
+    //   return createResponse({
+    //     success: true,
+    //     data: null,
+    //     message: '暂无待分析笔记',
+    //   });
+    // }
+    //
+    // await lockNoteForAnalysis(currentNote);
+    //
+    // // 发起 AI 分析请求，不等待结果，在后台异步处理
+    // processAiAnalysis(currentNote).catch((error) => {
+    //   console.error(`异步处理 AI 分析失败:`, error);
+    // });
+    //
+    // // 立即返回成功响应
+    // return createResponse({
+    //   success: true,
+    //   data: {
+    //     noteId: currentNote.NoteId,
+    //     message: 'AI 分析任务已启动，正在后台处理',
+    //   },
+    // });
   } catch (error: any) {
     console.error('AI note analysis failed:', error);
 
