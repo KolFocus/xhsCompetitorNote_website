@@ -11,7 +11,7 @@ import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 
 const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
 const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
-const AI_MODEL = 'gemini-2.5-flash';
+const AI_MODEL = 'gemini-2.5-pro';
 const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
 
 export const runtime = 'nodejs';
