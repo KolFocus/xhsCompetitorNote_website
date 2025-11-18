@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
  * 使用Tab切换登录和注册表单
  */
 import React, { useState } from 'react';
-import { Tabs, Form, Input, Button, Checkbox, message } from 'antd';
+import { Tabs, Form, Input, Button, Checkbox, message, Alert } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -20,6 +20,9 @@ const LoginPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('login');
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState(false);
+  const emailRedirectTo = process.env.NEXT_PUBLIC_SUPABASE_EMAIL_REDIRECT_URL;
   
   // 延迟创建 Supabase 客户端（仅在注册功能需要时）
   const getSupabaseClient = () => {
@@ -51,7 +54,12 @@ const LoginPage: React.FC = () => {
       });
 
       if (error) {
-        message.error(error.message || '登录失败，请检查邮箱和密码');
+        const normalizedMessage = error.message?.toLowerCase() || '';
+        if (normalizedMessage.includes('email') && normalizedMessage.includes('confirm')) {
+          message.warning('邮箱尚未验证，请先前往邮箱点击验证链接');
+        } else {
+          message.error(error.message || '登录失败，请检查邮箱和密码');
+        }
         return;
       }
 
@@ -83,11 +91,16 @@ const LoginPage: React.FC = () => {
         return;
       }
 
+      if (!emailRedirectTo) {
+        message.error('缺少邮箱验证回调地址配置，请联系管理员');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: values.email,
         password: values.password,
         options: {
-          emailRedirectTo: undefined, // 不发送验证邮件
+          emailRedirectTo,
         },
       });
 
@@ -97,17 +110,50 @@ const LoginPage: React.FC = () => {
       }
 
       if (data.user) {
-        message.success('注册成功！正在跳转...');
-        // 注册成功后直接跳转到 dashboard（如果 Supabase 后台未开启邮箱验证，用户会自动登录）
-        // 如果后台开启了邮箱验证，需要先在 Supabase Dashboard 中关闭
-        router.push('/dashboard');
-        router.refresh();
+        message.success('注册成功，请登录邮箱完成验证后再登录');
+        setPendingEmail(values.email);
       }
     } catch (error) {
       console.error('Register error:', error);
       message.error('注册失败，请重试');
     } finally {
       setRegisterLoading(false);
+    }
+  };
+
+  /**
+   * 重新发送验证邮件
+   */
+  const handleResendVerification = async () => {
+    if (!pendingEmail) {
+      message.warning('请先完成注册，再尝试重新发送验证邮件');
+      return;
+    }
+
+    try {
+      setResendLoading(true);
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        message.error('Supabase 未配置，暂无法发送验证邮件');
+        return;
+      }
+
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: pendingEmail,
+      });
+
+      if (error) {
+        message.error(error.message || '重新发送失败，请稍后重试');
+        return;
+      }
+
+      message.success('验证邮件已重新发送，请查收');
+    } catch (error) {
+      console.error('Resend verification error:', error);
+      message.error('重新发送失败，请稍后重试');
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -200,6 +246,12 @@ const LoginPage: React.FC = () => {
                   layout="vertical"
                   size="large"
                 >
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="注册后系统会发送验证邮件，请点击邮件中的链接以激活账号"
+                    style={{ marginBottom: 16 }}
+                  />
                   <Form.Item
                     name="email"
                     rules={[
@@ -246,6 +298,28 @@ const LoginPage: React.FC = () => {
                       placeholder="确认密码"
                     />
                   </Form.Item>
+
+                  {pendingEmail && (
+                    <Alert
+                      type="success"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                      message={`验证邮件已发送至 ${pendingEmail}`}
+                      description={
+                        <div>
+                          请尽快查收并点击邮件中的验证链接完成激活。
+                          <Button
+                            type="link"
+                            size="small"
+                            onClick={handleResendVerification}
+                            loading={resendLoading}
+                          >
+                            未收到？点击重新发送
+                          </Button>
+                        </div>
+                      }
+                    />
+                  )}
 
                   <Form.Item>
                     <Button type="primary" htmlType="submit" block loading={registerLoading}>

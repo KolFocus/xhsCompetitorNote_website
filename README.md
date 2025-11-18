@@ -25,11 +25,13 @@ npm install
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://plvjtbzwbxmajnkanhbe.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsdmp0Ynp3YnhtYWpua2FuaGJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzODE4NjUsImV4cCI6MjA3NTk1Nzg2NX0.oQVOyp-dGdUqctn6dfvhWnFp2TUDOwY_y0M5_vl9e7U
+NEXT_PUBLIC_SUPABASE_EMAIL_REDIRECT_URL=http://localhost:3000/auth/callback
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 **重要提示**: 
 - `NEXT_PUBLIC_SUPABASE_URL` 和 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 是必需的，否则应用无法正常运行
+- `NEXT_PUBLIC_SUPABASE_EMAIL_REDIRECT_URL` 用于邮箱验证回调页面，需与 Supabase Dashboard → Authentication → URL Configuration 中的 Site URL 域一致
 - `GEMINI_API_KEY` 用于AI分析功能，可以稍后配置
 
 ### 3. 启动开发服务器
