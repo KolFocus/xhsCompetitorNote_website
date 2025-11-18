@@ -32,24 +32,52 @@ const AuthCallbackPageContent: React.FC = () => {
       const code = searchParams.get('code');
       const otpType = normalizeOtpType(searchParams.get('type'));
 
-      if (!tokenHash && !code) {
-        setStatus('error');
-        setDescription('缺少验证参数，请直接从邮箱中的链接进入此页面');
+      // 如果有 code 参数，说明是从 Supabase 验证端点重定向过来的
+      // 这种情况下，应该使用服务端 API 来处理（因为需要 PKCE）
+      if (code) {
+        try {
+          // 使用服务端 API 处理验证
+          const response = await fetch(`/api/auth/callback?code=${encodeURIComponent(code)}&type=${otpType}`);
+          
+          if (response.redirected) {
+            // 如果重定向了，说明验证成功或失败，重定向到登录页面
+            window.location.href = response.url;
+            return;
+          }
+
+          const result = await response.json();
+          if (!result.success) {
+            throw new Error(result.error || '邮箱验证失败');
+          }
+
+          setStatus('success');
+          setDescription('邮箱验证成功，正在跳转到登录页面...');
+          setTimeout(() => {
+            router.push('/login?verified=success');
+          }, 2000);
+        } catch (error) {
+          console.error('Email verification error:', error);
+          setStatus('error');
+          setDescription(
+            (error as Error)?.message || '邮箱验证失败，请重试或重新请求验证邮件',
+          );
+        }
         return;
       }
 
-      let supabase;
-      try {
-        supabase = createClient();
-      } catch (error) {
-        console.error('Supabase client creation failed:', error);
-        setStatus('error');
-        setDescription('无法初始化 Supabase 客户端，请检查配置');
-        return;
-      }
+      // 处理 token_hash（旧版链接格式）
+      if (tokenHash) {
+        let supabase;
+        try {
+          supabase = createClient();
+        } catch (error) {
+          console.error('Supabase client creation failed:', error);
+          setStatus('error');
+          setDescription('无法初始化 Supabase 客户端，请检查配置');
+          return;
+        }
 
-      try {
-        if (tokenHash) {
+        try {
           const { error } = await supabase.auth.verifyOtp({
             type: otpType,
             token_hash: tokenHash,
@@ -58,27 +86,26 @@ const AuthCallbackPageContent: React.FC = () => {
           if (error) {
             throw error;
           }
-        } else if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
 
-          if (error) {
-            throw error;
-          }
+          setStatus('success');
+          setDescription('邮箱验证成功，现在可以返回登录页面');
+        } catch (error) {
+          console.error('Email verification error:', error);
+          setStatus('error');
+          setDescription(
+            (error as Error)?.message || '邮箱验证失败，请重试或重新请求验证邮件',
+          );
         }
-
-        setStatus('success');
-        setDescription('邮箱验证成功，现在可以返回登录页面');
-      } catch (error) {
-        console.error('Email verification error:', error);
-        setStatus('error');
-        setDescription(
-          (error as Error)?.message || '邮箱验证失败，请重试或重新请求验证邮件',
-        );
+        return;
       }
+
+      // 既没有 code 也没有 token_hash
+      setStatus('error');
+      setDescription('缺少验证参数，请直接从邮箱中的链接进入此页面');
     };
 
     verifyEmail();
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (status === 'success') {

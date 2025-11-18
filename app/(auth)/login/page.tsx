@@ -1,28 +1,42 @@
 'use client';
 
-// 标记为动态渲染
-export const dynamic = 'force-dynamic';
-
 /**
  * 登录/注册页面
  * 使用Tab切换登录和注册表单
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Tabs, Form, Input, Button, Checkbox, message, Alert } from 'antd';
 import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 type TabType = 'login' | 'register';
 
-const LoginPage: React.FC = () => {
+const LoginPageContent: React.FC = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>('login');
   const [loginLoading, setLoginLoading] = useState(false);
   const [registerLoading, setRegisterLoading] = useState(false);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [resendLoading, setResendLoading] = useState(false);
   const emailRedirectTo = process.env.NEXT_PUBLIC_SUPABASE_EMAIL_REDIRECT_URL;
+
+  // 检查 URL 参数，显示验证成功或失败的消息
+  useEffect(() => {
+    const verified = searchParams.get('verified');
+    const error = searchParams.get('error');
+
+    if (verified === 'success') {
+      message.success('邮箱验证成功，现在可以登录了');
+      // 清除 URL 参数
+      router.replace('/login');
+    } else if (error) {
+      message.error(decodeURIComponent(error));
+      // 清除 URL 参数
+      router.replace('/login');
+    }
+  }, [searchParams, router]);
   
   // 延迟创建 Supabase 客户端（仅在注册功能需要时）
   const getSupabaseClient = () => {
@@ -384,6 +398,34 @@ const LoginPage: React.FC = () => {
         />
       </div>
     </div>
+  );
+};
+
+const LoginPage: React.FC = () => {
+  return (
+    <Suspense fallback={
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: 400,
+          padding: '40px',
+          background: '#fff',
+          borderRadius: '8px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+          textAlign: 'center',
+        }}>
+          <div>加载中...</div>
+        </div>
+      </div>
+    }>
+      <LoginPageContent />
+    </Suspense>
   );
 };
 
