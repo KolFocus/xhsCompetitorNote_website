@@ -104,14 +104,54 @@ const LoginPage: React.FC = () => {
         },
       });
 
+      // 详细日志用于调试
+      console.log('注册响应:', {
+        error,
+        user: data?.user,
+        session: data?.session,
+        emailConfirmed: data?.user?.email_confirmed_at,
+        confirmationSentAt: data?.user?.confirmation_sent_at,
+      });
+
       if (error) {
+        console.error('注册错误详情:', error);
         message.error(error.message || '注册失败');
         return;
       }
 
       if (data.user) {
-        message.success('注册成功，请登录邮箱完成验证后再登录');
-        setPendingEmail(values.email);
+        // 检查邮箱是否已确认（如果已确认，说明 Supabase 后台可能关闭了邮箱验证）
+        if (data.user.email_confirmed_at) {
+          message.warning('注册成功，但邮箱已验证（Supabase 后台可能关闭了邮箱验证功能）');
+          // 如果已确认，直接跳转
+          router.push('/dashboard');
+          router.refresh();
+        } else {
+          // 检查是否已发送确认邮件
+          const confirmationSentAt = data.user.confirmation_sent_at;
+          if (confirmationSentAt) {
+            // 邮件已发送
+            message.success({
+              content: '注册成功！验证邮件已发送，请查收邮箱（包括垃圾邮件文件夹）',
+              duration: 6,
+            });
+            setPendingEmail(values.email);
+            console.log('验证邮件已发送，发送时间:', confirmationSentAt);
+          } else {
+            // 邮件未发送（可能是配置问题）
+            message.warning('注册成功，但验证邮件可能未发送，请尝试重新发送');
+            setPendingEmail(values.email);
+            console.warn('注册成功但未检测到 confirmation_sent_at，可能邮件未发送');
+          }
+          
+          // 检查是否有 session（如果有，说明可能自动登录了）
+          if (data.session) {
+            console.warn('注册后获得了 session，可能 Supabase 后台关闭了邮箱验证');
+          }
+        }
+      } else {
+        message.error('注册失败：未创建用户');
+        console.error('注册失败：data.user 为空', data);
       }
     } catch (error) {
       console.error('Register error:', error);
@@ -307,12 +347,23 @@ const LoginPage: React.FC = () => {
                       message={`验证邮件已发送至 ${pendingEmail}`}
                       description={
                         <div>
-                          请尽快查收并点击邮件中的验证链接完成激活。
+                          <div style={{ marginBottom: 8 }}>
+                            请尽快查收并点击邮件中的验证链接完成激活。
+                          </div>
+                          <div style={{ marginBottom: 8, color: '#faad14', fontSize: '13px' }}>
+                            ⚠️ 如果未收到邮件，请检查：
+                            <ul style={{ margin: '4px 0 0 20px', padding: 0 }}>
+                              <li>垃圾邮件/Spam 文件夹</li>
+                              <li>邮件是否被拦截或过滤</li>
+                              <li>等待几分钟后重试（邮件可能延迟）</li>
+                            </ul>
+                          </div>
                           <Button
                             type="link"
                             size="small"
                             onClick={handleResendVerification}
                             loading={resendLoading}
+                            style={{ padding: 0 }}
                           >
                             未收到？点击重新发送
                           </Button>
