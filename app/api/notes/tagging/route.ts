@@ -88,14 +88,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 删除当前笔记在该系列下的所有关联
+    // 删除当前笔记在该系列下的所有关联（包括所有用户的标签）
     const tagIdsWithinSet = Array.from(tagLookup.keys());
     if (tagIdsWithinSet.length > 0) {
       const { error: deleteError } = await supabase
         .from('qiangua_note_tag')
         .delete()
         .eq('NoteId', noteId)
-        .eq('UserId', user.id)
         .in('TagId', tagIdsWithinSet);
 
       if (deleteError) {

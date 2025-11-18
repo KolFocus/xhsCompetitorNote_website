@@ -240,7 +240,6 @@ export async function DELETE(request: NextRequest) {
     const { error: deleteError } = await supabase
       .from('qiangua_note_tag')
       .delete()
-      .eq('UserId', user.id)
       .in('NoteId', uniqueNoteIds)
       .in('TagId', tagIdsWithinSet);
 

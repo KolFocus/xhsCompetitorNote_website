@@ -62,8 +62,7 @@ export async function GET(
     const { data: relations, error: relationsError } = await supabase
       .from('qiangua_note_tag')
       .select('TagId')
-      .eq('NoteId', noteId)
-      .eq('UserId', user.id);
+      .eq('NoteId', noteId);
 
     if (relationsError) {
       console.error('Error fetching note tags:', relationsError);
