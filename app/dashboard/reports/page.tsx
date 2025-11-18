@@ -132,6 +132,22 @@ export default function ReportsPage() {
   // 达人矩阵分析刷新键，仅在有效集合变化时递增
   const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
 
+  // 处理创建报告成功
+  const handleCreateReportSuccess = (newReportId: string) => {
+    loadReports(); // 重新加载报告列表
+    setReportId(newReportId); // 选中新创建的报告
+  };
+
+  // 处理追加笔记成功
+  const handleAddNotesSuccess = () => {
+    if (reportId) {
+      loadReportDetail(reportId); // 重新加载报告详情
+      loadNotes(); // 重新加载笔记列表
+      // 追加笔记改变有效集合，触发达人矩阵重新分析
+      setAnalysisRefreshKey((k) => k + 1);
+    }
+  };
+
   // 自定义滚动条样式
   React.useEffect(() => {
     const style = document.createElement('style');
@@ -712,34 +728,27 @@ export default function ReportsPage() {
   // 报告列表为空时显示空状态
   if (reports.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Empty
-          image={<FileTextOutlined style={{ fontSize: 64, color: '#d9d9d9' }} />}
-          description="暂无报告"
-        >
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalVisible(true)}>
-            创建报告
-          </Button>
-        </Empty>
-      </div>
+      <>
+        <div style={{ textAlign: 'center', padding: '100px 0' }}>
+          <Empty
+            image={<FileTextOutlined style={{ fontSize: 64, color: '#d9d9d9' }} />}
+            description="暂无报告"
+          >
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalVisible(true)}>
+              创建报告
+            </Button>
+          </Empty>
+        </div>
+
+        {/* 创建报告 Modal */}
+        <CreateReportModal
+          open={createModalVisible}
+          onCancel={() => setCreateModalVisible(false)}
+          onSuccess={handleCreateReportSuccess}
+        />
+      </>
     );
   }
-
-  // 处理创建报告成功
-  const handleCreateReportSuccess = (newReportId: string) => {
-    loadReports(); // 重新加载报告列表
-    setReportId(newReportId); // 选中新创建的报告
-  };
-
-  // 处理追加笔记成功
-  const handleAddNotesSuccess = () => {
-    if (reportId) {
-      loadReportDetail(reportId); // 重新加载报告详情
-      loadNotes(); // 重新加载笔记列表
-      // 追加笔记改变有效集合，触发达人矩阵重新分析
-      setAnalysisRefreshKey((k) => k + 1);
-    }
-  };
 
   return (
     <div style={{ padding: 24 }}>
