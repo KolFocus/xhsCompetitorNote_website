@@ -170,6 +170,7 @@ const processAiAnalysis = async (note: NoteRecord) => {
         errorText = aiResponse.statusText;
       }
       console.log('song processAiAnalysis err:', errorText)
+      // 如果是 AI 接口返回错误，保存完整的响应内容
       throw new Error(
         `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
       );
@@ -197,6 +198,7 @@ const processAiAnalysis = async (note: NoteRecord) => {
         AiContentType: aiResult.contentType,
         AiRelatedProducts: aiResult.relatedProducts,
         AiJson: responseText,
+        AiErr: null, // 成功时清空错误信息
       })
       .eq('NoteId', note.NoteId);
     if (updateError) {
@@ -208,11 +210,14 @@ const processAiAnalysis = async (note: NoteRecord) => {
     }
   } catch (error: any) {
     try {
+      // 保存错误信息到 AiErr 字段
+      const errorMessage = error?.message || '未知错误';
       await markAnalysisStatus(note.NoteId, '分析失败', {
         AiSummary: null,
         AiContentType: null,
         AiRelatedProducts: null,
         AiJson: null,
+        AiErr: errorMessage,
       });
     } catch (statusError) {
       console.error(
@@ -243,47 +248,41 @@ export async function GET() {
       );
     }
 
+    const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
+    
+    if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
+      return createResponse({
+        success: true,
+        data: null,
+        message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
+      });
+    }
+    
+    currentNote = await fetchNextPendingNote(supabase);
+    
+    if (!currentNote) {
+      return createResponse({
+        success: true,
+        data: null,
+        message: '暂无待分析笔记',
+      });
+    }
+    
+    await lockNoteForAnalysis(currentNote);
+    
+    // 发起 AI 分析请求，不等待结果，在后台异步处理
+    processAiAnalysis(currentNote).catch((error) => {
+      console.error(`异步处理 AI 分析失败:`, error);
+    });
+    
+    // 立即返回成功响应
     return createResponse({
       success: true,
-      data: null,
-      message: '暂无待分析笔记',
+      data: {
+        noteId: currentNote.NoteId,
+        message: 'AI 分析任务已启动，正在后台处理',
+      },
     });
-
-    // const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
-    //
-    // if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
-    //   return createResponse({
-    //     success: true,
-    //     data: null,
-    //     message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
-    //   });
-    // }
-    //
-    // currentNote = await fetchNextPendingNote(supabase);
-    //
-    // if (!currentNote) {
-    //   return createResponse({
-    //     success: true,
-    //     data: null,
-    //     message: '暂无待分析笔记',
-    //   });
-    // }
-    //
-    // await lockNoteForAnalysis(currentNote);
-    //
-    // // 发起 AI 分析请求，不等待结果，在后台异步处理
-    // processAiAnalysis(currentNote).catch((error) => {
-    //   console.error(`异步处理 AI 分析失败:`, error);
-    // });
-    //
-    // // 立即返回成功响应
-    // return createResponse({
-    //   success: true,
-    //   data: {
-    //     noteId: currentNote.NoteId,
-    //     message: 'AI 分析任务已启动，正在后台处理',
-    //   },
-    // });
   } catch (error: any) {
     console.error('AI note analysis failed:', error);
 
@@ -301,11 +300,14 @@ export async function GET() {
       const note = currentNote as NoteRecord;
       if (note.NoteId) {
         try {
+          // 保存错误信息到 AiErr 字段
+          const errorMessage = error?.message || '系统错误';
           await markAnalysisStatus(note.NoteId, '分析失败', {
             AiSummary: null,
             AiContentType: null,
             AiRelatedProducts: null,
             AiJson: null,
+            AiErr: errorMessage,
           });
         } catch (statusError) {
           console.error(
