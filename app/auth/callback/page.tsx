@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { Button, Result, Spin } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -20,7 +20,7 @@ const normalizeOtpType = (raw: string | null): VerifyOtpType => {
   return 'signup';
 };
 
-const AuthCallbackPage: React.FC = () => {
+const AuthCallbackPageContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<VerifyStatus>('pending');
@@ -59,9 +59,7 @@ const AuthCallbackPage: React.FC = () => {
             throw error;
           }
         } else if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession({
-            code,
-          });
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
 
           if (error) {
             throw error;
@@ -134,6 +132,41 @@ const AuthCallbackPage: React.FC = () => {
         )}
       </div>
     </div>
+  );
+};
+
+const AuthCallbackPage: React.FC = () => {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              background: '#fff',
+              borderRadius: 8,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
+              padding: 32,
+              textAlign: 'center',
+            }}
+          >
+            <Spin tip="加载中..." size="large" />
+          </div>
+        </div>
+      }
+    >
+      <AuthCallbackPageContent />
+    </Suspense>
   );
 };
 

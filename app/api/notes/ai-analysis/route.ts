@@ -297,19 +297,22 @@ export async function GET() {
       );
     }
 
-    if (currentNote?.NoteId) {
-      try {
-        await markAnalysisStatus(currentNote.NoteId, '分析失败', {
-          AiSummary: null,
-          AiContentType: null,
-          AiRelatedProducts: null,
-          AiJson: null,
-        });
-      } catch (statusError) {
-        console.error(
-          `Failed to mark note ${currentNote.NoteId} as 分析失败:`,
-          statusError,
-        );
+    if (currentNote) {
+      const note = currentNote as NoteRecord;
+      if (note.NoteId) {
+        try {
+          await markAnalysisStatus(note.NoteId, '分析失败', {
+            AiSummary: null,
+            AiContentType: null,
+            AiRelatedProducts: null,
+            AiJson: null,
+          });
+        } catch (statusError) {
+          console.error(
+            `Failed to mark note ${note.NoteId} as 分析失败:`,
+            statusError,
+          );
+        }
       }
     }
 
