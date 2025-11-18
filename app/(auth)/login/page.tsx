@@ -53,15 +53,16 @@ const LoginPage: React.FC = () => {
       }
 
       if (data.user) {
-        message.success('登录成功');
+        message.success('登录成功，正在跳转...');
         // 刷新页面以更新认证状态
         router.push('/dashboard');
         router.refresh();
+        // 不要在 finally 中取消 loading，保持 loading 状态直到页面跳转
+        return;
       }
     } catch (error) {
       console.error('Login error:', error);
       message.error('登录失败，请重试');
-    } finally {
       setLoginLoading(false);
     }
   };
@@ -96,13 +97,15 @@ const LoginPage: React.FC = () => {
         message.success('注册成功！正在跳转...');
         router.push('/dashboard');
         router.refresh();
+        // 不要在 finally 中取消 loading，保持 loading 状态直到页面跳转
+        return;
       } else {
         message.error('注册失败，请重试');
+        setRegisterLoading(false);
       }
     } catch (error) {
       console.error('Register error:', error);
       message.error('注册失败，请重试');
-    } finally {
       setRegisterLoading(false);
     }
   };
@@ -133,7 +136,12 @@ const LoginPage: React.FC = () => {
 
         <Tabs
           activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as TabType)}
+          onChange={(key) => {
+            // 防止在加载时切换标签
+            if (!loginLoading && !registerLoading) {
+              setActiveTab(key as TabType);
+            }
+          }}
           items={[
             {
               key: 'login',
@@ -156,6 +164,7 @@ const LoginPage: React.FC = () => {
                     <Input
                       prefix={<MailOutlined />}
                       placeholder="邮箱"
+                      disabled={loginLoading}
                     />
                   </Form.Item>
 
@@ -166,20 +175,30 @@ const LoginPage: React.FC = () => {
                     <Input.Password
                       prefix={<LockOutlined />}
                       placeholder="密码"
+                      disabled={loginLoading}
                     />
                   </Form.Item>
 
                   <Form.Item>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Form.Item name="remember" valuePropName="checked" noStyle>
-                        <Checkbox>记住我</Checkbox>
+                        <Checkbox disabled={loginLoading}>记住我</Checkbox>
                       </Form.Item>
-                      <a href="#" style={{ fontSize: 14 }}>忘记密码？</a>
+                      <a 
+                        href="#" 
+                        style={{ 
+                          fontSize: 14,
+                          pointerEvents: loginLoading ? 'none' : 'auto',
+                          opacity: loginLoading ? 0.5 : 1,
+                        }}
+                      >
+                        忘记密码？
+                      </a>
                     </div>
                   </Form.Item>
 
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" block loading={loginLoading}>
+                    <Button type="primary" htmlType="submit" block loading={loginLoading} disabled={loginLoading}>
                       登录
                     </Button>
                   </Form.Item>
@@ -207,6 +226,7 @@ const LoginPage: React.FC = () => {
                     <Input
                       prefix={<MailOutlined />}
                       placeholder="邮箱"
+                      disabled={registerLoading}
                     />
                   </Form.Item>
 
@@ -220,6 +240,7 @@ const LoginPage: React.FC = () => {
                     <Input.Password
                       prefix={<LockOutlined />}
                       placeholder="密码（至少6位）"
+                      disabled={registerLoading}
                     />
                   </Form.Item>
 
@@ -241,11 +262,12 @@ const LoginPage: React.FC = () => {
                     <Input.Password
                       prefix={<LockOutlined />}
                       placeholder="确认密码"
+                      disabled={registerLoading}
                     />
                   </Form.Item>
 
                   <Form.Item>
-                    <Button type="primary" htmlType="submit" block loading={registerLoading}>
+                    <Button type="primary" htmlType="submit" block loading={registerLoading} disabled={registerLoading}>
                       注册
                     </Button>
                   </Form.Item>
