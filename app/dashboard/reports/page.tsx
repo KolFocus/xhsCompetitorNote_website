@@ -538,7 +538,6 @@ export default function ReportsPage() {
       title: '品牌',
       dataIndex: 'brandName',
       key: 'brandName',
-      width: 120,
       render: (brandName: string | null, record: Note) => {
         if (!brandName || !record.brandId || !record.brandIdKey) {
           return <span style={{ color: '#999' }}>-</span>;
@@ -1033,7 +1032,7 @@ export default function ReportsPage() {
               showSizeChanger: true,
               showTotal: (total) => `共 ${total} 条`,
             }}
-            scroll={{ x: 1400 }}
+            scroll={{ x: 'max-content' }}
           />
         </>
       )}

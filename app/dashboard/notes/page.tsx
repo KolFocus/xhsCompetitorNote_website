@@ -489,7 +489,6 @@ export default function NotesPage() {
       title: '品牌',
       dataIndex: 'BrandName',
       key: 'BrandName',
-      width: 120,
       render: (brandName: string | null, record: Note) => {
         if (!brandName || !record.BrandId || !record.BrandIdKey) {
           return <span style={{ color: '#999' }}>-</span>;
@@ -498,7 +497,7 @@ export default function NotesPage() {
         return (
           <Tag
             color="blue"
-            style={{ cursor: 'pointer' }}
+            style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
             onClick={(e) => {
               e.stopPropagation();
               window.open(qianGuaUrl, '_blank');
@@ -758,6 +757,7 @@ export default function NotesPage() {
         loading={loading}
         onChange={handleTableChange}
         showSorterTooltip={false}
+        scroll={{ x: 'max-content' }}
         pagination={{
           current: page,
           pageSize: pageSize,
@@ -777,7 +777,6 @@ export default function NotesPage() {
             }
           },
         }}
-        scroll={{ x: 1200 }}
       />
     </div>
   );
