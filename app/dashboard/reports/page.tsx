@@ -127,6 +127,9 @@ export default function ReportsPage() {
   const [notesLoading, setNotesLoading] = useState(false); // 笔记列表加载状态
   const [activeTab, setActiveTab] = useState<'active' | 'ignored'>('active');
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [addNotesModalVisible, setAddNotesModalVisible] = useState(false);
   // 达人矩阵分析刷新键，仅在有效集合变化时递增
@@ -191,7 +194,8 @@ export default function ReportsPage() {
   useEffect(() => {
     if (reportId) {
       loadReportDetail(reportId);
-      loadNotes();
+      setPage(1); // 重置到第一页
+      loadNotes(1, pageSize);
     }
   }, [reportId, activeTab, brandId, bloggerId, dateRange, sortField, sortOrder]);
 
@@ -229,14 +233,14 @@ export default function ReportsPage() {
     }
   };
 
-  const loadNotes = async () => {
+  const loadNotes = async (pageValue = page, pageSizeValue = pageSize) => {
     if (!reportId) return;
 
     try {
       setNotesLoading(true);
       const params = new URLSearchParams({
-        page: '1',
-        pageSize: '20',
+        page: String(pageValue),
+        pageSize: String(pageSizeValue),
         status: activeTab,
       });
       if (brandId) params.set('brandId', brandId);
@@ -253,7 +257,18 @@ export default function ReportsPage() {
       const response = await fetch(`/api/reports/${reportId}/notes?${params}`);
       const data = await response.json();
       if (data.success) {
-        setNotes(data.data.list);
+        const notesList = data.data.list || [];
+        const totalCount = data.data.total ?? notesList.length;
+        setNotes(notesList);
+        setTotal(totalCount);
+        setPage(data.data.page ?? pageValue);
+        setPageSize(data.data.pageSize ?? pageSizeValue);
+        console.log('loadNotes result:', { 
+          page: pageValue, 
+          pageSize: pageSizeValue, 
+          total: totalCount, 
+          listLength: notesList.length 
+        });
       }
     } catch (error) {
       message.error('加载笔记列表失败');
@@ -904,7 +919,7 @@ export default function ReportsPage() {
                 />
               </Col>
               <Col>
-                <Button icon={<ReloadOutlined />} onClick={loadNotes}>
+                <Button icon={<ReloadOutlined />} onClick={() => loadNotes()}>
                   刷新
                 </Button>
               </Col>
@@ -914,6 +929,8 @@ export default function ReportsPage() {
                     setBrandId(null);
                     setBloggerId(null);
                     setDateRange(null);
+                    setPage(1);
+                    loadNotes(1, pageSize);
                   }}
                 >
                   重置
@@ -986,51 +1003,28 @@ export default function ReportsPage() {
             loading={notesLoading}
             onChange={handleTableChange}
             showSorterTooltip={false}
-            summary={(pageData) => {
-              // 计算总计
-              const totalLiked = pageData.reduce((sum, n) => sum + (n.likedCount || 0), 0);
-              const totalComments = pageData.reduce((sum, n) => sum + (n.commentsCount || 0), 0);
-              const totalCollected = pageData.reduce((sum, n) => sum + ((n as any).collectedCount || 0), 0);
-              const totalShares = pageData.reduce((sum, n) => sum + (n.shareCount || 0), 0);
-              const totalInteraction = totalLiked + totalComments + totalCollected;
-              return (
-                <Table.Summary fixed>
-                  <Table.Summary.Row>
-                    <Table.Summary.Cell index={0} colSpan={4}>
-                      <span style={{ fontWeight: 600 }}>总计</span>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={4} />
-                    <Table.Summary.Cell index={5} />
-                    <Table.Summary.Cell index={6} align="right">
-                      {formatNumber(totalInteraction)}
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={7} align="right">
-                      {formatNumber(totalLiked)}
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={8} align="right">
-                      {formatNumber(totalCollected)}
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={9} align="right">
-                      {formatNumber(totalComments)}
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={10} align="right">
-                      {formatNumber(totalShares)}
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell index={11} />
-                    <Table.Summary.Cell index={12} />
-                  </Table.Summary.Row>
-                </Table.Summary>
-              );
-            }}
             rowSelection={{
               selectedRowKeys: selectedNoteIds,
               onChange: (keys) => setSelectedNoteIds(keys as string[]),
             }}
             pagination={{
-              total: notes.length,
-              pageSize: 20,
+              current: page,
+              total: total,
+              pageSize: pageSize,
               showSizeChanger: true,
+              showQuickJumper: true,
               showTotal: (total) => `共 ${total} 条`,
+              hideOnSinglePage: false,
+              onChange: (newPage, newPageSize) => {
+                if (newPageSize !== pageSize) {
+                  setPageSize(newPageSize);
+                  setPage(1);
+                  loadNotes(1, newPageSize);
+                } else {
+                  setPage(newPage);
+                  loadNotes(newPage, pageSize);
+                }
+              },
             }}
             scroll={{ x: 'max-content' }}
           />

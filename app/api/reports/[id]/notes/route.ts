@@ -62,6 +62,7 @@ export async function GET(
     }
 
     // 构建查询 - 从 qiangua_report_note_rel 开始，关联 qiangua_note_info
+    // 注意：先查询所有符合条件的记录，然后在内存中筛选和分页
     let query = supabase
       .from('qiangua_report_note_rel')
       .select(`
@@ -99,14 +100,7 @@ export async function GET(
       .eq('ReportId', reportId)
       .eq('Status', status);
 
-    // 应用过滤条件（通过子查询）
-    // 注意：Supabase 的过滤需要在子查询中处理，这里简化处理
-    // 实际应用中可能需要先查询符合条件的 NoteId，再过滤
-
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    query = query.range(from, to);
-
+    // 先查询所有符合条件的记录（不使用 range，因为需要在内存中筛选）
     const { data, error, count } = await query;
 
     if (error) {
@@ -189,14 +183,19 @@ export async function GET(
       return order === 'asc' ? aVal - bVal : bVal - aVal;
     });
 
+    // 计算筛选后的总数
+    const totalCount = notes.length;
+    
     // 重新分页（因为筛选在内存中进行）
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize;
     const paginatedNotes = notes.slice(from, to);
 
     return NextResponse.json({
       success: true,
       data: {
         list: paginatedNotes,
-        total: notes.length, // 注意：这是筛选后的总数，不是数据库总数
+        total: totalCount, // 筛选后的总数
         page,
         pageSize,
       },
