@@ -23,6 +23,7 @@ import {
   Statistic,
   Checkbox,
   Typography,
+  message,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -81,6 +82,7 @@ interface Note {
   NoteId: string;
   Title: string;
   Content: string | null;
+  XhsContent?: string | null;
   CoverImage: string | null;
   NoteType: string;
   IsBusiness: boolean;
@@ -162,6 +164,7 @@ export default function NotesPage() {
     };
   }, []);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -247,31 +250,35 @@ export default function NotesPage() {
   };
 
   // 加载笔记列表
+  const buildNotesQueryParams = (currentPage: number, currentPageSize: number) => {
+    const params = new URLSearchParams({
+      page: currentPage.toString(),
+      pageSize: currentPageSize.toString(),
+    });
+
+    if (selectedBrand) {
+      params.append('brandId', selectedBrand);
+    }
+    if (selectedBlogger) {
+      params.append('bloggerId', selectedBlogger);
+    }
+    if (dateRange && dateRange[0] && dateRange[1]) {
+      params.append('startDate', dateRange[0].format('YYYY-MM-DD'));
+      params.append('endDate', dateRange[1].format('YYYY-MM-DD'));
+    }
+
+    if (sortField) {
+      params.append('orderBy', sortField);
+      params.append('order', sortOrder);
+    }
+
+    return params;
+  };
+
   const loadNotes = async (currentPage: number = page) => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-        pageSize: pageSize.toString(),
-      });
-
-      if (selectedBrand) {
-        params.append('brandId', selectedBrand);
-      }
-      if (selectedBlogger) {
-        params.append('bloggerId', selectedBlogger);
-      }
-      if (dateRange && dateRange[0] && dateRange[1]) {
-        params.append('startDate', dateRange[0].format('YYYY-MM-DD'));
-        params.append('endDate', dateRange[1].format('YYYY-MM-DD'));
-      }
-
-      // 添加排序参数
-      if (sortField) {
-        params.append('orderBy', sortField);
-        params.append('order', sortOrder);
-      }
-
+      const params = buildNotesQueryParams(currentPage, pageSize);
       const response = await fetch(`/api/notes?${params.toString()}`);
       const data: NotesResponse = await response.json();
 
@@ -286,6 +293,148 @@ export default function NotesPage() {
       console.error('Error loading notes:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllNotesForExport = async (): Promise<Note[]> => {
+    const maxExportPageSize = 100;
+    let currentPage = 1;
+    let totalFetched = 0;
+    let totalCount = 0;
+    const allNotes: Note[] = [];
+
+    while (true) {
+      const params = buildNotesQueryParams(currentPage, maxExportPageSize);
+      const response = await fetch(`/api/notes?${params.toString()}`);
+      const data: NotesResponse = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to fetch notes for export');
+      }
+
+      const list = data.data.list || [];
+      allNotes.push(...list);
+      totalFetched += list.length;
+      totalCount = data.data.total || 0;
+
+      if (totalFetched >= totalCount || list.length === 0) {
+        break;
+      }
+
+      currentPage += 1;
+    }
+
+    return allNotes;
+  };
+
+  const handleExport = async () => {
+    if (exporting) return;
+    try {
+      setExporting(true);
+      const XLSX: any = await import('xlsx');
+      const allNotes = await fetchAllNotesForExport();
+
+      if (!allNotes.length) {
+        message.warning('暂无数据可导出');
+        return;
+      }
+
+      const filterParts: string[] = [];
+      if (selectedBrand) {
+        const brandName =
+          brands.find((brand) => brand.BrandId === selectedBrand)?.BrandName || selectedBrand;
+        filterParts.push(`品牌-${brandName}`);
+      }
+      if (selectedBlogger) {
+        const bloggerName =
+          bloggers.find((blogger) => blogger.BloggerId === selectedBlogger)?.BloggerNickName ||
+          selectedBlogger;
+        filterParts.push(`博主-${bloggerName}`);
+      }
+      if (dateRange && dateRange[0] && dateRange[1]) {
+        filterParts.push(
+          `日期-${dateRange[0].format('YYYYMMDD')}-${dateRange[1].format('YYYYMMDD')}`
+        );
+      }
+
+      const sanitizeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_');
+      const baseName = filterParts.length > 0 ? `${filterParts.join('_')}_全部笔记` : '全部笔记';
+      const safeBaseName = sanitizeFileName(baseName);
+
+      const detailKeepOrder: Array<{
+        key: keyof Note;
+        label: string;
+        format?: (value: any, record: Note) => any;
+      }> = [
+        { key: 'NoteId', label: '笔记ID' },
+        { key: 'Title', label: '标题' },
+        { key: 'Content', label: '文本内容' },
+        { key: 'XhsContent', label: 'XHS内容' },
+        { key: 'CoverImage', label: '封面' },
+        { key: 'NoteType', label: '笔记类型' },
+        {
+          key: 'PublishTime',
+          label: '发布时间',
+          format: (value: string) => {
+            if (!value) return '';
+            const match = value.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+            if (match) return `${match[1]} ${match[2]}`;
+            try {
+              const dt = new Date(value);
+              const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+              return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+            } catch {
+              return value;
+            }
+          },
+        },
+        { key: 'LikedCount', label: '点赞' },
+        { key: 'CollectedCount', label: '收藏' },
+        { key: 'CommentsCount', label: '评论' },
+        { key: 'ViewCount', label: '浏览' },
+        { key: 'ShareCount', label: '分享' },
+        { key: 'Fans', label: '粉丝数' },
+        { key: 'AdPrice', label: '合作金额' },
+        { key: 'BloggerId', label: '达人ID' },
+        { key: 'BloggerNickName', label: '达人昵称' },
+        { key: 'SmallAvatar', label: '头像(小)' },
+        { key: 'BigAvatar', label: '头像(大)' },
+        { key: 'BrandName', label: '品牌' },
+        { key: 'VideoDuration', label: '视频时长' },
+        { key: 'XhsNoteLink', label: '链接' },
+        { key: 'AiContentType', label: 'AI分析-内容场景' },
+        { key: 'AiRelatedProducts', label: 'AI分析-相关产品' },
+        { key: 'AiSummary', label: 'AI分析-内容总结' },
+      ];
+
+      const detailHeader = detailKeepOrder.map((item) => item.label);
+      const detailData = allNotes.map((note) => {
+        const row: Record<string, any> = {};
+        detailKeepOrder.forEach((item) => {
+          const raw = (note as any)[item.key];
+          row[item.label] = item.format ? item.format(raw, note) : raw ?? '';
+        });
+        return row;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(detailData, { header: detailHeader });
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '笔记列表');
+
+      const now = new Date();
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const shanghaiDate = new Date(utcMs + 8 * 60 * 60000);
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const timestamp = `${shanghaiDate.getFullYear()}${pad(shanghaiDate.getMonth() + 1)}${pad(shanghaiDate.getDate())}-${pad(shanghaiDate.getHours())}${pad(shanghaiDate.getMinutes())}${pad(shanghaiDate.getSeconds())}`;
+      const filename = `${safeBaseName}_${timestamp}.xlsx`;
+
+      XLSX.writeFile(workbook, filename);
+      message.success(`导出成功，共 ${allNotes.length} 条笔记`);
+    } catch (error) {
+      console.error('Export notes failed:', error);
+      message.error('导出失败，请稍后重试');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -1014,12 +1163,21 @@ export default function NotesPage() {
         scroll={{ x: 'max-content' }}
         title={() => (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Checkbox
-              checked={showAiAnalysis}
-              onChange={(e) => setShowAiAnalysis(e.target.checked)}
-            >
-              显示AI分析
-            </Checkbox>
+            <Space size={16} align="center">
+              <Button
+                onClick={handleExport}
+                loading={exporting}
+                disabled={notes.length === 0}
+              >
+                导出Excel
+              </Button>
+              <Checkbox
+                checked={showAiAnalysis}
+                onChange={(e) => setShowAiAnalysis(e.target.checked)}
+              >
+                显示AI分析
+              </Checkbox>
+            </Space>
           </div>
         )}
         pagination={{
