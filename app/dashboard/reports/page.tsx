@@ -26,6 +26,8 @@ import {
   Empty,
   Modal,
   Spin,
+  Checkbox,
+  Typography,
 } from 'antd';
 import {
   PlusOutlined,
@@ -41,6 +43,8 @@ import {
   EyeInvisibleOutlined,
   UndoOutlined,
   QuestionCircleOutlined,
+  LinkOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
@@ -56,6 +60,7 @@ dayjs.locale('zh-cn');
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+const { Text } = Typography;
 
 // 图片代理服务
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
@@ -92,6 +97,7 @@ interface Note {
   title: string;
   content: string | null;
   coverImage: string | null;
+  xhsNoteLink: string | null;
   noteType: string;
   isBusiness: boolean;
   isAdNote: boolean;
@@ -114,6 +120,9 @@ interface Note {
   videoDuration: string | null;
   status: string;
   addedAt: string;
+  aiContentType: string | null;
+  aiRelatedProducts: string | null;
+  aiSummary: string | null;
 }
 
 export default function ReportsPage() {
@@ -132,6 +141,14 @@ export default function ReportsPage() {
   const [total, setTotal] = useState(0);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [addNotesModalVisible, setAddNotesModalVisible] = useState(false);
+  // 从 localStorage 读取显示AI分析的状态，默认为 false
+  const [showAiAnalysis, setShowAiAnalysis] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('showAiAnalysis');
+      return saved === 'true';
+    }
+    return false;
+  });
   // 达人矩阵分析刷新键，仅在有效集合变化时递增
   const [analysisRefreshKey, setAnalysisRefreshKey] = useState(0);
 
@@ -189,6 +206,13 @@ export default function ReportsPage() {
   useEffect(() => {
     loadReports();
   }, []);
+
+  // 保存显示AI分析的状态到 localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('showAiAnalysis', String(showAiAnalysis));
+    }
+  }, [showAiAnalysis]);
 
   // 加载报告详情
   useEffect(() => {
@@ -284,7 +308,7 @@ export default function ReportsPage() {
     if (action === 'delete') {
       Modal.confirm({
         title: '确认删除',
-        content: `确定要删除选中的 ${idsToProcess.length} 条笔记吗？此操作会从当前报告中移除${idsToProcess.length === 1 ? '该笔记' : '这些笔记'}，但不会导致笔记从系统中删除。`,
+        content: `确定要删除选中的 ${idsToProcess.length} 条笔记吗？此操作会从当前报告中移除${idsToProcess.length === 1 ? '该笔记' : '这些笔记'}，但不会导致笔记从系统中删除。之后，可以通过追加笔记重新添加。`,
         onOk: async () => {
           try {
             const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
@@ -311,7 +335,7 @@ export default function ReportsPage() {
     } else if (action === 'ignore') {
       Modal.confirm({
         title: '确认忽略',
-        content: `确定忽略${idsToProcess.length}条笔记？忽略的笔记出现在忽略列表中，可以重新恢复。`,
+        content: `确定忽略${idsToProcess.length}条笔记？忽略的笔记出现在忽略列表中，可以重新恢复。被忽略的笔记，将不会参与该报告的分析统计。`,
         onOk: async () => {
           try {
             const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
@@ -335,27 +359,33 @@ export default function ReportsPage() {
           }
         },
       });
-    } else {
-      try {
-        const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, noteIds: idsToProcess }),
-        });
-        const data = await response.json();
-        if (data.success) {
-          message.success('操作成功');
-          setSelectedNoteIds([]);
-          loadNotes();
-          loadReportDetail(reportId);
-          // 有效集合发生变化，触发达人矩阵重新分析
-          setAnalysisRefreshKey((k) => k + 1);
-        } else {
-          message.error(data.error || '操作失败');
-        }
-      } catch (error) {
-        message.error('操作失败');
-      }
+    } else if (action === 'restore') {
+      Modal.confirm({
+        title: '确认恢复',
+        content: `确定恢复${idsToProcess.length}条笔记？恢复的笔记将重新出现在有效笔记列表中，并参与该报告的分析统计。`,
+        onOk: async () => {
+          try {
+            const response = await fetch(`/api/reports/${reportId}/notes/batch-action`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action, noteIds: idsToProcess }),
+            });
+            const data = await response.json();
+            if (data.success) {
+              message.success('操作成功');
+              setSelectedNoteIds([]);
+              loadNotes();
+              loadReportDetail(reportId);
+              // 有效集合发生变化，触发达人矩阵重新分析
+              setAnalysisRefreshKey((k) => k + 1);
+            } else {
+              message.error(data.error || '操作失败');
+            }
+          } catch (error) {
+            message.error('操作失败');
+          }
+        },
+      });
     }
   };
 
@@ -405,101 +435,331 @@ export default function ReportsPage() {
     return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
 
-  const columns: ColumnsType<Note> = [
-    {
-      title: '封面',
-      dataIndex: 'coverImage',
-      key: 'coverImage',
-      width: 100,
-      fixed: 'left',
-      render: (image: string | null, record: Note) => (
-        <div style={{
-          width: 60,
-          height: 80,
-          position: 'relative',
-          overflow: 'hidden',
-          borderRadius: 4,
-        }}>
-          {image ? (
-        <Image
-              src={getProxiedImageUrl(image)}
-              alt={record.title || ''}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                background: '#f0f0f0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                color: '#999',
-              }}
-            >
-              无图
+  // 截断文本辅助函数
+  const truncateText = (text: string | null | undefined, maxLength: number): string => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + '...';
+  };
+
+  // 渲染AI分析Tooltip内容
+  const renderAiAnalysisTooltip = (record: Note) => {
+    const hasAiData = record.aiContentType || record.aiRelatedProducts || record.aiSummary;
+    if (!hasAiData) return null;
+
+    return (
+      <div style={{ maxWidth: 500, maxHeight: 400, overflow: 'auto', color: '#fff' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {record.aiContentType && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>内容场景：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.aiContentType}
+              </Text>
             </div>
           )}
-        </div>
-      ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'title',
-      key: 'title',
-      width: 300,
-      fixed: 'left',
-      ellipsis: true,
-      render: (text: string, record: Note) => {
-        const content = record.content?.trim() || '';
-        const tooltipContent = content ? (
-          <div
-            className="tooltip-scrollable"
-            style={{
-              maxWidth: 400,
-              maxHeight: 300,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word'
-            }}
-          >
-            {content}
-          </div>
-        ) : (
-          '未采集'
-        );
+          {record.aiRelatedProducts && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>相关产品：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.aiRelatedProducts}
+              </Text>
+            </div>
+          )}
+          {record.aiSummary && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>内容总结：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.aiSummary}
+              </Text>
+            </div>
+          )}
+        </Space>
+      </div>
+    );
+  };
 
-        return (
-        <div>
-            <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
-              <div style={{ marginBottom: 8, fontWeight: 500 }}>
-                {text || '无标题'}
-              </div>
-          </Tooltip>
-            <Space size="small" wrap>
-              {record.noteType === 'video' ? (
-              <Tag color="blue" icon={<VideoCameraOutlined />}>
-                  {record.videoDuration ? `${record.videoDuration}` : '视频'}
-                </Tag>
+  const columns: ColumnsType<Note> = [
+    ...(showAiAnalysis
+      ? [
+          // 显示AI分析时：封面和标题合并
+          {
+            title: '笔记',
+            key: 'noteWithCover',
+            width: 300,
+            fixed: 'left' as const,
+            render: (_: unknown, record: Note) => {
+              const content = record.content?.trim() || '';
+              const tooltipContent = content ? (
+                <div
+                  className="tooltip-scrollable"
+                  style={{
+                    maxWidth: 400,
+                    maxHeight: 300,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {content}
+                </div>
               ) : (
-                <Tag color="green" icon={<PictureOutlined />}>
-                  图文
-              </Tag>
-            )}
-            {record.isAdNote && <Tag color="red">广告</Tag>}
-            {record.isBusiness && <Tag color="orange">商业</Tag>}
-          </Space>
-        </div>
-        );
-      },
-    },
+                '未采集'
+              );
+
+              return (
+                <div style={{ width: 180 }}>
+                  {/* 封面图片 */}
+                  <div
+                    style={{
+                      width: 180,
+                      height: 240,
+                      marginBottom: 8,
+                      overflow: 'hidden',
+                      borderRadius: 4,
+                      backgroundColor: '#f0f0f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {record.coverImage ? (
+                      <Image
+                        src={getProxiedImageUrl(record.coverImage)}
+                        alt={record.title || ''}
+                        width={180}
+                        height={240}
+                        style={{ objectFit: 'cover' }}
+                        preview={true}
+                      />
+                    ) : (
+                      <Text type="secondary">无封面</Text>
+                    )}
+                  </div>
+
+                  {/* 标题和标签 */}
+                  <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                    <div style={{ marginBottom: 8, fontWeight: 500 }}>
+                      {record.title || '无标题'}
+                    </div>
+                  </Tooltip>
+                  <Space size="small" wrap>
+                    {record.noteType === 'video' ? (
+                      <Tag color="blue" icon={<VideoCameraOutlined />}>
+                        {record.videoDuration ? `${record.videoDuration}` : '视频'}
+                      </Tag>
+                    ) : (
+                      <Tag color="green" icon={<PictureOutlined />}>
+                        图文
+                      </Tag>
+                    )}
+                    {record.isAdNote && <Tag color="red">广告</Tag>}
+                    {record.isBusiness && <Tag color="orange">商业</Tag>}
+                    {record.xhsNoteLink && (
+                      <LinkOutlined
+                        style={{ color: '#1890ff', cursor: 'pointer', fontSize: 16 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(record.xhsNoteLink!, '_blank');
+                        }}
+                      />
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]
+      : [
+          // 不显示AI分析时：封面和标题分开
+          {
+            title: '封面',
+            dataIndex: 'coverImage',
+            key: 'coverImage',
+            width: 100,
+            fixed: 'left' as const,
+            render: (image: string | null, record: Note) => (
+              <div style={{
+                width: 60,
+                height: 80,
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: 4,
+              }}>
+                {image ? (
+                  <Image
+                    src={getProxiedImageUrl(image)}
+                    alt={record.title || ''}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: '#f0f0f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      color: '#999',
+                    }}
+                  >
+                    无图
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            title: '标题',
+            dataIndex: 'title',
+            key: 'title',
+            width: 300,
+            fixed: 'left' as const,
+            ellipsis: true,
+            render: (text: string, record: Note) => {
+              const content = record.content?.trim() || '';
+              const tooltipContent = content ? (
+                <div
+                  className="tooltip-scrollable"
+                  style={{
+                    maxWidth: 400,
+                    maxHeight: 300,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {content}
+                </div>
+              ) : (
+                '未采集'
+              );
+
+              const hasAiData = record.aiContentType || record.aiRelatedProducts || record.aiSummary;
+              const aiTooltipContent = renderAiAnalysisTooltip(record);
+
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    {hasAiData ? (
+                      <Tooltip
+                        title={aiTooltipContent}
+                        overlayStyle={{ maxWidth: 520 }}
+                        overlayInnerStyle={{ maxHeight: 450, overflow: 'auto' }}
+                      >
+                        <RobotOutlined
+                          style={{
+                            color: '#1890ff',
+                            fontSize: 16,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <RobotOutlined
+                        style={{
+                          color: '#d9d9d9',
+                          fontSize: 16,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                      <div style={{ fontWeight: 400, flex: 1 }}>
+                        {text || '无标题'}
+                      </div>
+                    </Tooltip>
+                  </div>
+                  <Space size="small" wrap>
+                    {record.noteType === 'video' ? (
+                      <Tag color="blue" icon={<VideoCameraOutlined />}>
+                        {record.videoDuration ? `${record.videoDuration}` : '视频'}
+                      </Tag>
+                    ) : (
+                      <Tag color="green" icon={<PictureOutlined />}>
+                        图文
+                      </Tag>
+                    )}
+                    {record.isAdNote && <Tag color="red">广告</Tag>}
+                    {record.isBusiness && <Tag color="orange">商业</Tag>}
+                    {record.xhsNoteLink && (
+                      <LinkOutlined
+                        style={{ color: '#1890ff', cursor: 'pointer', fontSize: 16 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(record.xhsNoteLink!, '_blank');
+                        }}
+                      />
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]),
+    ...(showAiAnalysis
+      ? [
+          {
+            title: 'AI分析结果',
+            key: 'aiAnalysis',
+            width: 450,
+            render: (_: unknown, record: Note) => {
+              const hasAiData = record.aiContentType || record.aiRelatedProducts || record.aiSummary;
+
+              if (!hasAiData) {
+                return <Text type="secondary">暂无分析</Text>;
+              }
+
+              return (
+                <div style={{ marginTop: '-8px', paddingTop: 0 }}>
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {record.aiContentType && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          内容场景：
+                        </Text>
+                        <Tooltip title={record.aiContentType}>
+                          <Text style={{ fontSize: 16 }}>
+                            {truncateText(record.aiContentType, 8)}
+                          </Text>
+                        </Tooltip>
+                      </div>
+                    )}
+                    {record.aiRelatedProducts && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          相关产品：
+                        </Text>
+                        <Text style={{ fontSize: 16 }}>
+                          {record.aiRelatedProducts}
+                        </Text>
+                      </div>
+                    )}
+                    {record.aiSummary && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          内容总结：
+                        </Text>
+                        <Text style={{ fontSize: 16 }}>
+                          {record.aiSummary}
+                        </Text>
+                      </div>
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]
+      : []),
     {
       title: '博主',
       key: 'blogger',
@@ -717,13 +977,23 @@ export default function ReportsPage() {
             </>
           )}
           {activeTab === 'ignored' && (
-            <Button
-              type="link"
-              size="small"
-              onClick={() => handleBatchAction('restore', [record.noteId])}
-            >
-              恢复
-            </Button>
+            <>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => handleBatchAction('restore', [record.noteId])}
+              >
+                恢复
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                danger
+                onClick={() => handleBatchAction('delete', [record.noteId])}
+              >
+                删除
+              </Button>
+            </>
           )}
         </Space>
       ),
@@ -974,12 +1244,21 @@ export default function ReportsPage() {
                       </>
                     )}
                     {activeTab === 'ignored' && (
-                      <Button
-                        icon={<UndoOutlined />}
-                        onClick={() => handleBatchAction('restore')}
-                      >
-                        恢复
-                      </Button>
+                      <>
+                        <Button
+                          icon={<UndoOutlined />}
+                          onClick={() => handleBatchAction('restore')}
+                        >
+                          恢复
+                        </Button>
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => handleBatchAction('delete')}
+                        >
+                          删除
+                        </Button>
+                      </>
                     )}
                   </>
                 )}
@@ -991,6 +1270,12 @@ export default function ReportsPage() {
                 >
                   追加笔记
                 </Button>
+                <Checkbox
+                  checked={showAiAnalysis}
+                  onChange={(e) => setShowAiAnalysis(e.target.checked)}
+                >
+                  显示AI分析
+                </Checkbox>
               </Space>
             }
           />

@@ -12,7 +12,7 @@ export async function GET(
 ) {
   try {
     const supabase = createServerClient(request);
-    
+
     // 获取当前用户
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
@@ -74,6 +74,7 @@ export async function GET(
           Title,
           Content,
           CoverImage,
+          XhsNoteUrl,
           NoteType,
           IsBusiness,
           IsAdNote,
@@ -94,7 +95,11 @@ export async function GET(
           VideoDuration,
           Fans,
           AdPrice,
-          OfficialVerified
+          OfficialVerified,
+          XhsNoteLink,
+          AiContentType,
+          AiRelatedProducts,
+          AiSummary
         )
       `, { count: 'exact' })
       .eq('ReportId', reportId)
@@ -137,6 +142,7 @@ export async function GET(
           title: note.Title,
           content: note.Content,
           coverImage: note.CoverImage,
+          xhsNoteLink: note.XhsNoteLink ?? null,
           noteType: note.NoteType,
           isBusiness: note.IsBusiness,
           isAdNote: note.IsAdNote,
@@ -159,6 +165,9 @@ export async function GET(
           videoDuration: note.VideoDuration,
           status: item.Status,
           addedAt: item.CreatedAt,
+          aiContentType: note.AiContentType ?? null,
+          aiRelatedProducts: note.AiRelatedProducts ?? null,
+          aiSummary: note.AiSummary ?? null,
         };
       })
       .filter((note: any) => note !== null);
@@ -185,7 +194,7 @@ export async function GET(
 
     // 计算筛选后的总数
     const totalCount = notes.length;
-    
+
     // 重新分页（因为筛选在内存中进行）
     const from = (page - 1) * pageSize;
     const to = from + pageSize;
