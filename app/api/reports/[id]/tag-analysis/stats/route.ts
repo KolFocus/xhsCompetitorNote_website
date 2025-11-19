@@ -31,6 +31,13 @@ interface NoteInfoRecord {
   BrandIdKey: string | null;
   BrandName: string | null;
   VideoDuration: string | null;
+  XhsUserId: string | null;
+  XhsNoteLink: string | null;
+  XhsTitle: string | null;
+  XhsContent: string | null;
+  AiContentType: string | null;
+  AiRelatedProducts: string | null;
+  AiSummary: string | null;
 }
 
 interface NoteTagRelation {
@@ -92,6 +99,13 @@ interface NoteDetail {
   videoDuration: string | null;
   status: string | null;
   addedAt: string | null;
+  xhsUserId: string | null;
+  xhsNoteLink: string | null;
+  xhsTitle: string | null;
+  xhsContent: string | null;
+  aiContentType: string | null;
+  aiRelatedProducts: string | null;
+  aiSummary: string | null;
 }
 
 export async function GET(
@@ -189,7 +203,14 @@ export async function GET(
           BrandId,
           BrandIdKey,
           BrandName,
-          VideoDuration
+          VideoDuration,
+          XhsUserId,
+          XhsNoteLink,
+          XhsTitle,
+          XhsContent,
+          AiContentType,
+          AiRelatedProducts,
+          AiSummary
         )
       `)
       .eq('ReportId', reportId)
@@ -238,6 +259,13 @@ export async function GET(
             BrandIdKey: noteInfo.BrandIdKey ?? null,
             BrandName: noteInfo.BrandName ?? null,
             VideoDuration: noteInfo.VideoDuration ?? null,
+          XhsUserId: noteInfo.XhsUserId ?? null,
+          XhsNoteLink: noteInfo.XhsNoteLink ?? null,
+          XhsTitle: noteInfo.XhsTitle ?? null,
+          XhsContent: noteInfo.XhsContent ?? null,
+          AiContentType: noteInfo.AiContentType ?? null,
+          AiRelatedProducts: noteInfo.AiRelatedProducts ?? null,
+          AiSummary: noteInfo.AiSummary ?? null,
           };
           notes.push(note);
           noteMap.set(note.NoteId, note);
@@ -620,6 +648,13 @@ export async function GET(
         videoDuration: note.VideoDuration,
         status: 'active',
         addedAt: null,
+        xhsUserId: note.XhsUserId ?? null,
+        xhsNoteLink: note.XhsNoteLink ?? null,
+        xhsTitle: note.XhsTitle ?? null,
+        xhsContent: note.XhsContent ?? null,
+        aiContentType: note.AiContentType ?? null,
+        aiRelatedProducts: note.AiRelatedProducts ?? null,
+        aiSummary: note.AiSummary ?? null,
       });
     }
 

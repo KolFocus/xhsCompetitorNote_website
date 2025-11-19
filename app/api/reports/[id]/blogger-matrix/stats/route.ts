@@ -33,6 +33,13 @@ interface NoteInfoRecord {
   BrandIdKey?: string | null;
   BrandName?: string | null;
   VideoDuration?: string | null;
+  XhsUserId?: string | null;
+  XhsNoteLink?: string | null;
+  XhsTitle?: string | null;
+  XhsContent?: string | null;
+  AiContentType?: string | null;
+  AiRelatedProducts?: string | null;
+  AiSummary?: string | null;
 }
 
 interface NoteRelation {
@@ -151,7 +158,14 @@ export async function GET(
           BrandId,
           BrandIdKey,
           BrandName,
-          VideoDuration
+          VideoDuration,
+          XhsUserId,
+          XhsNoteLink,
+          XhsTitle,
+          XhsContent,
+          AiContentType,
+          AiRelatedProducts,
+          AiSummary
         )
       `)
       .eq('ReportId', reportId)
@@ -484,6 +498,13 @@ export async function GET(
         videoDuration: note.VideoDuration,
         status: rel.Status,
         addedAt: rel.CreatedAt,
+        xhsUserId: note.XhsUserId ?? null,
+        xhsNoteLink: note.XhsNoteLink ?? null,
+        xhsTitle: note.XhsTitle ?? null,
+        xhsContent: note.XhsContent ?? null,
+        aiContentType: note.AiContentType ?? null,
+        aiRelatedProducts: note.AiRelatedProducts ?? null,
+        aiSummary: note.AiSummary ?? null,
       };
     });
 

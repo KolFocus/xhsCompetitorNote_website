@@ -202,7 +202,7 @@ export default function BloggerMatrixAnalysis({
 
       // 明细 sheet：首列层级名称，其余字段与笔记列表一致
       // 移除不需要导出的字段，并使用中文表头；publishTime 格式化为 YYYY-MM-DD HH:mm:ss（不做时区换算）
-      const detailKeepOrder: Array<{ key: string; label: string; format?: (v: any) => any }> = [
+      const detailKeepOrder: Array<{ key: string; label: string; format?: (value: any, record: any) => any }> = [
         { key: 'noteId', label: '笔记ID' },
         { key: 'title', label: '标题' },
         { key: 'content', label: '文本内容' },
@@ -239,13 +239,49 @@ export default function BloggerMatrixAnalysis({
         { key: 'bloggerBigAvatar', label: '头像(大)' },
         { key: 'brandName', label: '品牌' },
         { key: 'videoDuration', label: '视频时长(秒)' },
+        {
+          key: 'xhsUserId',
+          label: '达人主页',
+          format: (value: any) =>
+            value ? `https://www.xiaohongshu.com/user/profile/${value}` : '',
+        },
+        {
+          key: 'xhsNoteLink',
+          label: '链接',
+          format: (value: any) => value || '',
+        },
+        {
+          key: 'xhsTitle',
+          label: 'XHS标题',
+          format: (value: any, record: any) => value || record.title || '',
+        },
+        {
+          key: 'xhsContent',
+          label: 'XHS内容',
+          format: (value: any) => value || '',
+        },
+        {
+          key: 'aiContentType',
+          label: 'AI分析-内容场景',
+          format: (value: any) => value || '',
+        },
+        {
+          key: 'aiRelatedProducts',
+          label: 'AI分析-相关产品',
+          format: (value: any) => value || '',
+        },
+        {
+          key: 'aiSummary',
+          label: 'AI分析-内容总结',
+          format: (value: any) => value || '',
+        },
       ];
       const detailHeader = ['层级名称', ...detailKeepOrder.map((i) => i.label)];
       const detailsData = details.map((d: any) => {
         const row: Record<string, any> = { 层级名称: d.levelName };
         for (const item of detailKeepOrder) {
           const raw = d[item.key];
-          row[item.label] = item.format ? item.format(raw) : raw;
+          row[item.label] = item.format ? item.format(raw, d) : raw;
         }
         return row;
       });
