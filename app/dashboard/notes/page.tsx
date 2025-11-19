@@ -21,6 +21,8 @@ import {
   Avatar,
   Tooltip,
   Statistic,
+  Checkbox,
+  Typography,
 } from 'antd';
 import {
   ReloadOutlined,
@@ -35,6 +37,8 @@ import {
   BarChartOutlined,
   UserOutlined,
   FileExclamationOutlined,
+  RobotOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
@@ -45,6 +49,7 @@ dayjs.locale('zh-cn');
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
+const { Text } = Typography;
 
 // 图片代理服务
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
@@ -100,6 +105,10 @@ interface Note {
   Fans?: number | null;
   AdPrice?: number | null; // 单位：分
   OfficialVerified?: boolean | null;
+  XhsNoteLink: string | null;
+  AiContentType: string | null;
+  AiRelatedProducts: string | null;
+  AiSummary: string | null;
 }
 
 interface Brand {
@@ -156,6 +165,14 @@ export default function NotesPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  // 从 localStorage 读取显示AI分析的状态，默认为 false
+  const [showAiAnalysis, setShowAiAnalysis] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('showAiAnalysis');
+      return saved === 'true';
+    }
+    return false;
+  });
 
   // 过滤条件
   const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
@@ -281,6 +298,13 @@ export default function NotesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBrand, selectedBlogger, dateRange, pageSize, sortField, sortOrder]);
 
+  // 保存显示AI分析的状态到 localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('showAiAnalysis', String(showAiAnalysis));
+    }
+  }, [showAiAnalysis]);
+
   // 处理列头点击排序
   const handleSortClick = (field: string, e?: React.MouseEvent) => {
     // 阻止默认行为和事件冒泡，避免触发 Ant Design 的默认排序处理
@@ -338,104 +362,333 @@ export default function NotesPage() {
     return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
 
-  // 定义表格列
-  const columns: ColumnsType<Note> = [
-    {
-      title: '封面',
-      dataIndex: 'CoverImage',
-      key: 'CoverImage',
-      fixed: 'left',
-      width: 100,
-      render: (image: string | null, record: Note) => (
-        <div style={{ 
-          width: 60,
-          height: 80,
-          position: 'relative',
-          overflow: 'hidden',
-          borderRadius: 4,
-        }}>
-          {image ? (
-            <Image
-              src={getProxiedImageUrl(image)}
-              alt={record.Title || ''}
-              preview={true}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                display: 'block',
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                background: '#f0f0f0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 12,
-                color: '#999',
-              }}
-            >
-              无图
+  // 截断文本辅助函数
+  const truncateText = (text: string | null | undefined, maxLength: number): string => {
+    if (!text) return '';
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + '...';
+  };
+
+  // 渲染AI分析Tooltip内容
+  const renderAiAnalysisTooltip = (record: Note) => {
+    const hasAiData = record.AiContentType || record.AiRelatedProducts || record.AiSummary;
+    if (!hasAiData) return null;
+
+    return (
+      <div style={{ maxWidth: 500, maxHeight: 400, overflow: 'auto', color: '#fff' }}>
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {record.AiContentType && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>内容场景：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.AiContentType}
+              </Text>
             </div>
           )}
-        </div>
-      ),
-    },
-    {
-      title: '标题',
-      dataIndex: 'Title',
-      key: 'Title',
-      width: 300,
-      fixed: 'left',
-      ellipsis: true,
-      render: (text: string, record: Note) => {
-        const content = record.Content?.trim() || '';
-        const tooltipContent = content ? (
-          <div 
-            className="tooltip-scrollable"
-            style={{ 
-              maxWidth: 400, 
-              maxHeight: 300, 
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap', 
-              wordBreak: 'break-word' 
-            }}
-          >
-            {content}
-          </div>
-        ) : (
-          '未采集'
-        );
+          {record.AiRelatedProducts && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>相关产品：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.AiRelatedProducts}
+              </Text>
+            </div>
+          )}
+          {record.AiSummary && (
+            <div>
+              <Text strong style={{ fontSize: 14, color: '#fff' }}>内容总结：</Text>
+              <Text style={{ fontSize: 14, display: 'block', marginTop: 4, color: '#fff' }}>
+                {record.AiSummary}
+              </Text>
+            </div>
+          )}
+        </Space>
+      </div>
+    );
+  };
 
-        return (
-        <div>
-              <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
-          <div style={{ marginBottom: 8, fontWeight: 500 }}>
-            {text || '无标题'}
-          </div>
-              </Tooltip>
-          <Space size="small" wrap>
-            {record.NoteType === 'video' ? (
-              <Tag color="blue" icon={<VideoCameraOutlined />}>
-                    {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
-              </Tag>
-            ) : (
-              <Tag color="green" icon={<PictureOutlined />}>
-                图文
-              </Tag>
-            )}
-            {record.IsAdNote && <Tag color="red">广告</Tag>}
-            {record.IsBusiness && <Tag color="orange">商业</Tag>}
-          </Space>
-        </div>
-          
-        );
-      },
-    },
+  // 定义表格列
+  const columns: ColumnsType<Note> = [
+    ...(showAiAnalysis
+      ? [
+          // 显示AI分析时：封面和标题合并
+          {
+            title: '笔记',
+            key: 'noteWithCover',
+            width: 300,
+            fixed: 'left' as const,
+            render: (_: unknown, record: Note) => {
+              const content = record.Content?.trim() || '';
+              const tooltipContent = content ? (
+                <div
+                  className="tooltip-scrollable"
+                  style={{
+                    maxWidth: 400,
+                    maxHeight: 300,
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {content}
+                </div>
+              ) : (
+                '未采集'
+              );
+
+              return (
+                <div style={{ width: 180 }}>
+                  {/* 封面图片 */}
+                  <div
+                    style={{
+                      width: 180,
+                      height: 240,
+                      marginBottom: 8,
+                      overflow: 'hidden',
+                      borderRadius: 4,
+                      backgroundColor: '#f0f0f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {record.CoverImage ? (
+                      <Image
+                        src={getProxiedImageUrl(record.CoverImage)}
+                        alt={record.Title || ''}
+                        width={180}
+                        height={240}
+                        style={{ objectFit: 'cover' }}
+                        preview={true}
+                      />
+                    ) : (
+                      <Text type="secondary">无封面</Text>
+                    )}
+                  </div>
+
+                  {/* 标题和标签 */}
+                  <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                    <div style={{ marginBottom: 8, fontWeight: 500 }}>
+                      {record.Title || '无标题'}
+                    </div>
+                  </Tooltip>
+                  <Space size="small" wrap>
+                    {record.NoteType === 'video' ? (
+                      <Tag color="blue" icon={<VideoCameraOutlined />}>
+                        {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
+                      </Tag>
+                    ) : (
+                      <Tag color="green" icon={<PictureOutlined />}>
+                        图文
+                      </Tag>
+                    )}
+                    {record.IsAdNote && <Tag color="red">广告</Tag>}
+                    {record.IsBusiness && <Tag color="orange">商业</Tag>}
+                    {record.XhsNoteLink && (
+                      <LinkOutlined
+                        style={{ color: '#1890ff', cursor: 'pointer', fontSize: 16 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(record.XhsNoteLink!, '_blank');
+                        }}
+                      />
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]
+      : [
+          // 不显示AI分析时：封面和标题分开
+          {
+            title: '封面',
+            dataIndex: 'CoverImage',
+            key: 'CoverImage',
+            fixed: 'left' as const,
+            width: 100,
+            render: (image: string | null, record: Note) => (
+              <div style={{ 
+                width: 60,
+                height: 80,
+                position: 'relative',
+                overflow: 'hidden',
+                borderRadius: 4,
+              }}>
+                {image ? (
+                  <Image
+                    src={getProxiedImageUrl(image)}
+                    alt={record.Title || ''}
+                    preview={true}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: '#f0f0f0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 12,
+                      color: '#999',
+                    }}
+                  >
+                    无图
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            title: '标题',
+            dataIndex: 'Title',
+            key: 'Title',
+            width: 300,
+            fixed: 'left' as const,
+            ellipsis: true,
+            render: (text: string, record: Note) => {
+              const content = record.Content?.trim() || '';
+              const tooltipContent = content ? (
+                <div 
+                  className="tooltip-scrollable"
+                  style={{ 
+                    maxWidth: 400, 
+                    maxHeight: 300, 
+                    overflow: 'auto',
+                    whiteSpace: 'pre-wrap', 
+                    wordBreak: 'break-word' 
+                  }}
+                >
+                  {content}
+                </div>
+              ) : (
+                '未采集'
+              );
+
+              const hasAiData = record.AiContentType || record.AiRelatedProducts || record.AiSummary;
+              const aiTooltipContent = renderAiAnalysisTooltip(record);
+
+              return (
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    {hasAiData ? (
+                      <Tooltip
+                        title={aiTooltipContent}
+                        overlayStyle={{ maxWidth: 520 }}
+                        overlayInnerStyle={{ maxHeight: 450, overflow: 'auto' }}
+                      >
+                        <RobotOutlined
+                          style={{
+                            color: '#1890ff',
+                            fontSize: 16,
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        />
+                      </Tooltip>
+                    ) : (
+                      <RobotOutlined
+                        style={{
+                          color: '#d9d9d9',
+                          fontSize: 16,
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                    <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                      <div style={{ fontWeight: 400, flex: 1 }}>
+                        {text || '无标题'}
+                      </div>
+                    </Tooltip>
+                  </div>
+                  <Space size="small" wrap>
+                    {record.NoteType === 'video' ? (
+                      <Tag color="blue" icon={<VideoCameraOutlined />}>
+                        {record.VideoDuration ? `${record.VideoDuration}` : '视频'}
+                      </Tag>
+                    ) : (
+                      <Tag color="green" icon={<PictureOutlined />}>
+                        图文
+                      </Tag>
+                    )}
+                    {record.IsAdNote && <Tag color="red">广告</Tag>}
+                    {record.IsBusiness && <Tag color="orange">商业</Tag>}
+                    {record.XhsNoteLink && (
+                      <LinkOutlined
+                        style={{ color: '#1890ff', cursor: 'pointer', fontSize: 16 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          window.open(record.XhsNoteLink!, '_blank');
+                        }}
+                      />
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]),
+    ...(showAiAnalysis
+      ? [
+          {
+            title: 'AI分析结果',
+            key: 'aiAnalysis',
+            width: 450,
+            render: (_: unknown, record: Note) => {
+              const hasAiData = record.AiContentType || record.AiRelatedProducts || record.AiSummary;
+
+              if (!hasAiData) {
+                return <Text type="secondary">暂无分析</Text>;
+              }
+
+              return (
+                <div style={{ marginTop: '-8px', paddingTop: 0 }}>
+                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                    {record.AiContentType && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          内容场景：
+                        </Text>
+                        <Tooltip title={record.AiContentType}>
+                          <Text style={{ fontSize: 16 }}>
+                            {truncateText(record.AiContentType, 8)}
+                          </Text>
+                        </Tooltip>
+                      </div>
+                    )}
+                    {record.AiRelatedProducts && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          相关产品：
+                        </Text>
+                        <Text style={{ fontSize: 16 }}>
+                          {record.AiRelatedProducts}
+                        </Text>
+                      </div>
+                    )}
+                    {record.AiSummary && (
+                      <div>
+                        <Text strong style={{ fontSize: 16 }}>
+                          内容总结：
+                        </Text>
+                        <Text style={{ fontSize: 16 }}>
+                          {record.AiSummary}
+                        </Text>
+                      </div>
+                    )}
+                  </Space>
+                </div>
+              );
+            },
+          },
+        ]
+      : []),
     {
       title: '博主',
       key: 'Blogger',
@@ -615,6 +868,7 @@ export default function NotesPage() {
       title: '发布时间',
       dataIndex: 'PublishTime',
       key: 'PublishTime',
+      fixed: 'right' as const,
       width: 160,
       sorter: true,
       defaultSortOrder: 'descend',
@@ -758,6 +1012,16 @@ export default function NotesPage() {
         onChange={handleTableChange}
         showSorterTooltip={false}
         scroll={{ x: 'max-content' }}
+        title={() => (
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Checkbox
+              checked={showAiAnalysis}
+              onChange={(e) => setShowAiAnalysis(e.target.checked)}
+            >
+              显示AI分析
+            </Checkbox>
+          </div>
+        )}
         pagination={{
           current: page,
           pageSize: pageSize,
