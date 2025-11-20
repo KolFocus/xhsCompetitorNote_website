@@ -1,91 +1,19 @@
 import { NextResponse } from 'next/server';
 
 import {
-  buildNoteAnalysisPrompt,
-  collectMediaUrls,
   fetchNextPendingNote,
-  parseAiResponseContent,
+  processNoteAiAnalysis,
   type NoteRecord,
 } from '@/lib/ai/noteAnalysis';
+import { log } from '@/lib/logger';
 import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 
-const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
-const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
-const AI_MODEL = 'gemini-2.5-flash';
 const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
+const BATCH_SIZE = 5; // 每次批量启动的任务数量
+const REQUEST_INTERVAL = 1000; // 请求之间的延时（毫秒）
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic'; // 禁用缓存，确保每次请求都执行
-
-const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
-  const content: Array<Record<string, any>> = [
-    {
-      type: 'text',
-      text: prompt,
-    },
-  ];
-
-  for (const url of mediaUrls) {
-    content.push({
-      type: 'image_url',
-      image_url: {
-        url,
-      },
-    });
-  }
-
-  const req = {
-    model: AI_MODEL,
-    messages: [
-      {
-        role: 'user',
-        content,
-      },
-    ],
-  };
-
-  return req
-};
-
-const extractMessageText = (responseBody: any): string => {
-  const choice = responseBody?.choices?.[0];
-  const message = choice?.message;
-
-  if (!message) {
-    throw new Error('AI 响应缺少 message 字段');
-  }
-
-  const { content } = message;
-
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    const merged = content
-      .map((item: any) => {
-        if (!item || typeof item !== 'object') {
-          return '';
-        }
-        if (typeof item.text === 'string') {
-          return item.text;
-        }
-        if (typeof item.content === 'string') {
-          return item.content;
-        }
-        return '';
-      })
-      .join('');
-
-    if (merged.trim().length === 0) {
-      throw new Error('AI 响应 content 数组不包含文本内容');
-    }
-
-    return merged;
-  }
-
-  throw new Error('AI 响应 content 类型未知');
-};
 
 // 创建带缓存控制的响应
 const createResponse = (data: any, status: number = 200) => {
@@ -99,140 +27,78 @@ const createResponse = (data: any, status: number = 200) => {
   });
 };
 
-const markAnalysisStatus = async (
-  noteId: string,
-  nextStatus: string,
-  payload: Record<string, any> = {},
-) => {
+
+// 延时函数
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// 后台批量启动AI分析任务
+const startBatchAnalysis = async () => {
   const supabase = getServiceSupabaseClient();
-  const { error } = await supabase
-    .from('qiangua_note_info')
-    .update({
-      AiStatus: nextStatus,
-      ...payload,
-    })
-    .eq('NoteId', noteId);
+  const startedNotes: string[] = [];
 
-  if (error) {
-    throw new Error(
-      `更新笔记 ${noteId} 状态为 ${nextStatus} 失败: ${error.message}`,
-    );
-  }
-};
+  log.info('AI批量分析开始', { batchSize: BATCH_SIZE });
 
-const lockNoteForAnalysis = async (note: NoteRecord) => {
-  const supabase = getServiceSupabaseClient();
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    try {
+      // 每次循环前检查当前"分析中"的数量
+      const { count } = await supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .eq('AiStatus', '分析中');
 
-  let query = supabase
-    .from('qiangua_note_info')
-    .update({ AiStatus: '分析中' })
-    .eq('NoteId', note.NoteId)
-    .lt('CreatedAt', new Date().toISOString());
+      const currentCount = count ?? 0;
 
-  if (note.AiStatus === null || note.AiStatus === undefined) {
-    query = query.is('AiStatus', null);
-  } else {
-    query = query.eq('AiStatus', note.AiStatus);
-  }
-
-  const { error, data } = await query.select('NoteId');
-
-  if (error) {
-    throw new Error(`锁定笔记 ${note.NoteId} 失败: ${error.message}`);
-  }
-
-  if (!data || data.length === 0) {
-    throw new Error(`笔记 ${note.NoteId} 已被其他任务处理`);
-  }
-};
-
-const processAiAnalysis = async (note: NoteRecord) => {
-  console.log('song processAiAnalysis begin')
-  const supabase = getServiceSupabaseClient();
-
-  try {
-    const mediaUrls = collectMediaUrls(note);
-    const prompt = buildNoteAnalysisPrompt(note);
-    console.log('song processAiAnalysis 01')
-    const aiResponse = await fetch(AI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${AI_API_TOKEN}`,
-      },
-      body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
-    });
-    if (!aiResponse.ok) {
-      let errorText: string | null = null;
-      try {
-        errorText = await aiResponse.text();
-      } catch {
-        errorText = aiResponse.statusText;
+      // 如果已达上限，停止启动新任务
+      if (currentCount >= MAX_CONCURRENT_ANALYSIS) {
+        log.warning('AI批量分析达到并发上限', {
+          currentCount,
+          maxConcurrent: MAX_CONCURRENT_ANALYSIS,
+          iteration: i + 1,
+        });
+        break;
       }
-      console.log('song processAiAnalysis err:', errorText)
-      // 如果是 AI 接口返回错误，保存完整的响应内容
-      throw new Error(
-        `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
-      );
-    }
 
-    let responseBody: any;
-    let responseText: string;
-    try {
-      responseText = await aiResponse.text();
-      console.log('song processAiAnalysis responseText:', responseText)
-      responseBody = JSON.parse(responseText);
-      console.log('song processAiAnalysis 03')
-    } catch (error: any) {
-      throw new Error(`AI 接口响应解析失败: ${error.message}`);
-    }
-    console.log('song processAiAnalysis end')
-    const messageText = extractMessageText(responseBody);
-    const aiResult = parseAiResponseContent(messageText);
+      // 获取下一个待分析笔记
+      const note = await fetchNextPendingNote(supabase);
+      
+      if (!note) {
+        log.info('AI批量分析无待分析笔记', { iteration: i + 1 });
+        break;
+      }
 
-    const { error: updateError } = await supabase
-      .from('qiangua_note_info')
-      .update({
-        AiStatus: '分析成功',
-        AiSummary: aiResult.summary,
-        AiContentType: aiResult.contentType,
-        AiRelatedProducts: aiResult.relatedProducts,
-        AiJson: responseText,
-        AiErr: null, // 成功时清空错误信息
-      })
-      .eq('NoteId', note.NoteId);
-    if (updateError) {
-      throw new Error(
-        `写入笔记 ${note.NoteId} AI 分析结果失败: ${
-          updateError.message ?? '未知错误'
-        }`,
-      );
-    }
-  } catch (error: any) {
-    try {
-      // 保存错误信息到 AiErr 字段
-      const errorMessage = error?.message || '未知错误';
-      await markAnalysisStatus(note.NoteId, '分析失败', {
-        AiSummary: null,
-        AiContentType: null,
-        AiRelatedProducts: null,
-        AiJson: null,
-        AiErr: errorMessage,
+      // 异步启动分析任务（不等待完成）
+      processNoteAiAnalysis(note).catch((error) => {
+        log.error('AI分析任务执行失败', { noteId: note.NoteId }, error);
       });
-    } catch (statusError) {
-      console.error(
-        `Failed to mark note ${note.NoteId} as 分析失败:`,
-        statusError,
-      );
+
+      startedNotes.push(note.NoteId);
+      log.info('AI分析任务已启动', {
+        noteId: note.NoteId,
+        iteration: i + 1,
+        totalStarted: startedNotes.length,
+      });
+
+      // 如果不是最后一次循环，延时1秒
+      if (i < BATCH_SIZE - 1) {
+        await sleep(REQUEST_INTERVAL);
+      }
+    } catch (error: any) {
+      log.error('批量启动任务出错', { iteration: i + 1 }, error);
+      // 出错后继续下一次循环
     }
   }
+
+  log.info('AI批量分析完成', {
+    totalStarted: startedNotes.length,
+    noteIds: startedNotes,
+  });
 };
 
 export async function GET() {
   const supabase = getServiceSupabaseClient();
-  let currentNote: NoteRecord | null = null;
 
   try {
+    // 检查当前分析中的数量
     const {
       data: inProgress,
       error: inProgressError,
@@ -258,9 +124,9 @@ export async function GET() {
       });
     }
 
-    currentNote = await fetchNextPendingNote(supabase);
-
-    if (!currentNote) {
+    // 检查是否有待分析笔记
+    const firstNote = await fetchNextPendingNote(supabase);
+    if (!firstNote) {
       return createResponse({
         success: true,
         data: null,
@@ -268,55 +134,23 @@ export async function GET() {
       });
     }
 
-    await lockNoteForAnalysis(currentNote);
-
-    // 发起 AI 分析请求，不等待结果，在后台异步处理
-    processAiAnalysis(currentNote).catch((error) => {
-      console.error(`异步处理 AI 分析失败:`, error);
+    // 在后台异步启动批量分析（不等待完成）
+    startBatchAnalysis().catch((error) => {
+      log.error('批量启动AI分析任务失败', {}, error);
     });
 
     // 立即返回成功响应
     return createResponse({
       success: true,
       data: {
-        noteId: currentNote.NoteId,
-        message: 'AI 分析任务已启动，正在后台处理',
+        message: `批量 AI 分析任务已启动，将在后台处理最多 ${BATCH_SIZE} 个笔记`,
+        maxBatchSize: BATCH_SIZE,
+        currentInProgress: currentInProgressCount,
+        maxConcurrent: MAX_CONCURRENT_ANALYSIS,
       },
     });
   } catch (error: any) {
-    console.error('AI note analysis failed:', error);
-
-    if (error?.message?.includes('笔记') && error?.message?.includes('处理')) {
-      return createResponse(
-        {
-          success: false,
-          error: error.message,
-        },
-        409,
-      );
-    }
-
-    if (currentNote) {
-      const note = currentNote as NoteRecord;
-      if (note.NoteId) {
-        try {
-          // 保存错误信息到 AiErr 字段
-          const errorMessage = error?.message || '系统错误';
-          await markAnalysisStatus(note.NoteId, '分析失败', {
-            AiSummary: null,
-            AiContentType: null,
-            AiRelatedProducts: null,
-            AiJson: null,
-            AiErr: errorMessage,
-          });
-        } catch (statusError) {
-          console.error(
-            `Failed to mark note ${note.NoteId} as 分析失败:`,
-            statusError,
-          );
-        }
-      }
-    }
+    log.error('AI批量分析API调用失败', {}, error);
 
     return createResponse(
       {

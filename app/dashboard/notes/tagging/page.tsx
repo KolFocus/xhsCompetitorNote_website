@@ -7,6 +7,7 @@ import {
   Avatar,
   Button,
   Card,
+  Checkbox,
   Col,
   Empty,
   Image,
@@ -25,6 +26,7 @@ import {
 import {
   ClearOutlined,
   DeleteOutlined,
+  ExclamationCircleOutlined,
   LinkOutlined,
   PictureOutlined,
   ReloadOutlined,
@@ -79,6 +81,8 @@ interface NoteRecord {
   AiContentType: string | null;
   AiRelatedProducts: string | null;
   AiSummary: string | null;
+  AiStatus?: string | null;
+  AiErr?: string | null;
   NoteType: string;
   VideoDuration: string | null;
 }
@@ -130,6 +134,10 @@ const NoteTaggingPage: React.FC = () => {
   const [filterTagId, setFilterTagId] = useState<string | null>('__untagged__');
   const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [pendingTagChanges, setPendingTagChanges] = useState<Record<string, string[]>>({});
+  const [submittingNoteId, setSubmittingNoteId] = useState<string | null>(null);
+  const [submittedNoteIds, setSubmittedNoteIds] = useState<Set<string>>(new Set());
+  const [analyzingNoteIds, setAnalyzingNoteIds] = useState<Set<string>>(new Set());
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
   const [bulkModalLoading, setBulkModalLoading] = useState(false);
   const [bulkSelectedTagIds, setBulkSelectedTagIds] = useState<string[]>([]);
@@ -148,6 +156,8 @@ const NoteTaggingPage: React.FC = () => {
   const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
   const [previewImage, setPreviewImage] = useState<string | undefined>(undefined);
+  const [showUnanalyzed, setShowUnanalyzed] = useState(false);
+  const [showMissingContent, setShowMissingContent] = useState(false);
 
   const fetchTagSets = async () => {
     try {
@@ -330,17 +340,35 @@ const NoteTaggingPage: React.FC = () => {
     }
   }, [selectedReportId, selectedBrand, selectedBlogger, dateRange]);
 
-  const handleTagChange = async (noteId: string, value: string[]) => {
+  const handleTagChange = (noteId: string, value: string[]) => {
     if (!selectedTagSetId) return;
+    // 更新待提交的标签变化
+    setPendingTagChanges((prev) => ({
+      ...prev,
+      [noteId]: value,
+    }));
+    // 从已提交集合中移除（因为有新的更改）
+    setSubmittedNoteIds((prev) => {
+      const next = new Set(prev);
+      next.delete(noteId);
+      return next;
+    });
+  };
+
+  const handleSubmit = async (noteId: string) => {
+    if (!selectedTagSetId) return;
+    const tagIds = pendingTagChanges[noteId];
+    if (!tagIds) return;
+
     try {
-      setSavingNoteId(noteId);
+      setSubmittingNoteId(noteId);
       const response = await fetch('/api/notes/tagging', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           noteId,
           tagSetId: selectedTagSetId,
-          tagIds: value,
+          tagIds,
         }),
       });
       const result = await response.json();
@@ -349,6 +377,14 @@ const NoteTaggingPage: React.FC = () => {
           ...prev,
           [noteId]: result.data.tags,
         }));
+        // 清除待提交的更改
+        setPendingTagChanges((prev) => {
+          const next = { ...prev };
+          delete next[noteId];
+          return next;
+        });
+        // 添加到已提交集合
+        setSubmittedNoteIds((prev) => new Set(prev).add(noteId));
         message.success('已保存');
       } else {
         message.error(result.error || '保存失败');
@@ -357,7 +393,51 @@ const NoteTaggingPage: React.FC = () => {
       console.error('Failed to save note tags', error);
       message.error('保存失败');
     } finally {
-      setSavingNoteId(null);
+      setSubmittingNoteId(null);
+    }
+  };
+
+  const handleAnalyzeNote = async (noteId: string) => {
+    try {
+      setAnalyzingNoteIds(prev => new Set(prev).add(noteId));
+      
+      const response = await fetch(`/api/notes/${noteId}/ai-analysis`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        // 更新本地笔记数据
+        setNoteList(prev => prev.map(note => 
+          note.NoteId === noteId 
+            ? { 
+                ...note, 
+                AiContentType: result.data.aiContentType,
+                AiRelatedProducts: result.data.aiRelatedProducts,
+                AiSummary: result.data.aiSummary,
+                AiStatus: result.data.aiStatus,
+                AiErr: result.data.aiErr || null,
+              } 
+            : note
+        ));
+        
+        if (result.data.aiStatus === '分析成功') {
+          message.success('分析完成');
+        } else {
+          message.error(`分析失败: ${result.data.aiErr || '未知错误'}`);
+        }
+      } else {
+        message.error(result.error || '分析失败');
+      }
+    } catch (error) {
+      console.error('AI分析请求失败:', error);
+      message.error('分析请求失败');
+    } finally {
+      setAnalyzingNoteIds(prev => {
+        const next = new Set(prev);
+        next.delete(noteId);
+        return next;
+      });
     }
   };
 
@@ -379,9 +459,23 @@ const NoteTaggingPage: React.FC = () => {
       }
       // filterTagId 为 null 时显示所有笔记
 
+      // 未AI分析筛选
+      if (showUnanalyzed) {
+        const hasAiData = note.AiContentType || note.AiRelatedProducts || note.AiSummary;
+        const isAnalyzing = note.AiStatus === '分析中' || analyzingNoteIds.has(note.NoteId);
+        if (hasAiData || isAnalyzing) return false; // 已分析或分析中，过滤掉
+      }
+
+      // 缺失内容筛选
+      if (showMissingContent) {
+        const hasContent = (note.Content && note.Content.trim()) || 
+                          (note.XhsContent && note.XhsContent.trim());
+        if (hasContent) return false; // 有内容，过滤掉
+      }
+
       return true;
     });
-  }, [noteList, noteTags, filterTagId]);
+  }, [noteList, noteTags, filterTagId, showUnanalyzed, showMissingContent, analyzingNoteIds]);
 
   const handleBulkTagging = async () => {
     if (!selectedTagSetId || bulkSelectedTagIds.length === 0) {
@@ -559,11 +653,70 @@ const NoteTaggingPage: React.FC = () => {
       width: 450,
       render: (_: unknown, record: NoteRecord) => {
         const hasAiData = record.AiContentType || record.AiRelatedProducts || record.AiSummary;
+        const isAnalyzing = analyzingNoteIds.has(record.NoteId);
+        const isFailed = record.AiStatus === '分析失败';
+        const needsAnalysis = !hasAiData;
+        
+        // 检查是否有内容可供分析
+        const noteContent = record.XhsContent || record.Content;
+        const hasContent = noteContent && noteContent.trim().length > 0;
 
-        if (!hasAiData) {
-          return <Text type="secondary">暂无分析</Text>;
+        // 分析失败 - 显示失败信息和重新分析按钮（仅当有内容时）
+        if (isFailed && !isAnalyzing) {
+          return (
+            <Space direction="vertical" align="start" size="small">
+              <Space align="center">
+                <Text type="danger">分析失败</Text>
+                <Tooltip title={record.AiErr || '未知错误'}>
+                  <ExclamationCircleOutlined style={{ color: '#ff4d4f' }} />
+                </Tooltip>
+              </Space>
+              {hasContent && (
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => handleAnalyzeNote(record.NoteId)}
+                  style={{ padding: 0, height: 'auto' }}
+                >
+                  重新分析
+                </Button>
+              )}
+            </Space>
+          );
         }
 
+        // 待分析 - 仅当有内容时显示开始分析按钮
+        if (needsAnalysis && !isAnalyzing && !isFailed) {
+          if (!hasContent) {
+            // 没有内容，不显示分析按钮
+            return <Text type="secondary">暂无分析</Text>;
+          }
+          
+          return (
+            <Space direction="vertical" align="start" size="small">
+              <Text type="secondary">暂无分析</Text>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => handleAnalyzeNote(record.NoteId)}
+                style={{ padding: 0, height: 'auto' }}
+              >
+                开始分析
+              </Button>
+            </Space>
+          );
+        }
+
+        // 分析中
+        if (isAnalyzing) {
+          return (
+            <Space>
+              <Text type="secondary">分析中...</Text>
+            </Space>
+          );
+        }
+
+        // 已有分析结果
         return (
           <div style={{ marginTop: '-8px', paddingTop: 0 }}>
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -615,17 +768,36 @@ const NoteTaggingPage: React.FC = () => {
       width: 260,
       render: (_: unknown, record: NoteRecord) => {
         const assigned = noteTags[record.NoteId] || [];
+        const pending = pendingTagChanges[record.NoteId];
+        const hasPendingChanges = pending !== undefined;
+        const isSubmitting = submittingNoteId === record.NoteId;
+        const isSubmitted = submittedNoteIds.has(record.NoteId);
+        
         return (
-          <Select
-            style={{ width: '100%' }}
-            mode="multiple"
-            placeholder="选择标签"
-            options={tagOptions}
-            value={assigned.map((tag) => tag.tagId)}
-            onChange={(value) => handleTagChange(record.NoteId, value)}
-            loading={savingNoteId === record.NoteId}
-            allowClear
-          />
+          <Space direction="vertical" style={{ width: '100%' }} size="small">
+            <Select
+              style={{ width: '100%' }}
+              mode="multiple"
+              placeholder="选择标签"
+              options={tagOptions}
+              value={hasPendingChanges ? pending : assigned.map((tag) => tag.tagId)}
+              onChange={(value) => handleTagChange(record.NoteId, value)}
+              loading={savingNoteId === record.NoteId}
+              allowClear
+            />
+            {hasPendingChanges && (
+              <Button
+                type="primary"
+                size="small"
+                onClick={() => handleSubmit(record.NoteId)}
+                loading={isSubmitting}
+                disabled={isSubmitted}
+                style={{ width: '100%' }}
+              >
+                {isSubmitted ? '已提交' : '提交'}
+              </Button>
+            )}
+          </Space>
         );
       },
     },
@@ -756,6 +928,30 @@ const NoteTaggingPage: React.FC = () => {
             </Col>
 
             <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
+                <strong>数据状态：</strong>
+              </div>
+              <Space>
+                <Tooltip title="筛选未进行AI内容分析的笔记">
+                  <Checkbox 
+                    checked={showUnanalyzed}
+                    onChange={(e) => setShowUnanalyzed(e.target.checked)}
+                  >
+                    仅显示未AI分析
+                  </Checkbox>
+                </Tooltip>
+                <Tooltip title="筛选笔记内容缺失的笔记（无法进行AI分析）">
+                  <Checkbox 
+                    checked={showMissingContent}
+                    onChange={(e) => setShowMissingContent(e.target.checked)}
+                  >
+                    仅显示缺失内容
+                  </Checkbox>
+                </Tooltip>
+              </Space>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
               <div style={{ marginBottom: 8 }}>&nbsp;</div>
                 <Space>
                 <Button icon={<ReloadOutlined />} onClick={() => loadNotes(page)}>
@@ -768,6 +964,8 @@ const NoteTaggingPage: React.FC = () => {
                     setSelectedBlogger(undefined);
                     setDateRange(null);
                     setFilterTagId('__untagged__');
+                    setShowUnanalyzed(false);
+                    setShowMissingContent(false);
                     setPage(1);
                     // 重置后重新加载笔记
                     setTimeout(() => {

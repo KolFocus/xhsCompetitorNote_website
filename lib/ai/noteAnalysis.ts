@@ -1,6 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { log } from '@/lib/logger';
+import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 import { fixImageUrl } from '@/lib/utils/dataTransform';
+
+// AI 配置常量
+export const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
+export const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
+export const AI_MODEL = 'gemini-2.5-flash';
 
 export interface NoteRecord extends Record<string, any> {
   NoteId: string;
@@ -207,6 +214,339 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
   };
 };
 
+/**
+ * 构建AI请求的payload
+ */
+export const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
+  const content: Array<Record<string, any>> = [
+    {
+      type: 'text',
+      text: prompt,
+    },
+  ];
+
+  for (const url of mediaUrls) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url,
+      },
+    });
+  }
+
+  return {
+    model: AI_MODEL,
+    messages: [
+      {
+        role: 'user',
+        content,
+      },
+    ],
+  };
+};
+
+/**
+ * 从AI响应中提取文本内容
+ */
+export const extractMessageText = (responseBody: any): string => {
+  const choice = responseBody?.choices?.[0];
+  const message = choice?.message;
+
+  if (!message) {
+    throw new Error('AI 响应缺少 message 字段');
+  }
+
+  const { content } = message;
+
+  if (typeof content === 'string') {
+    return content;
+  }
+
+  if (Array.isArray(content)) {
+    const merged = content
+      .map((item: any) => {
+        if (!item || typeof item !== 'object') {
+          return '';
+        }
+        if (typeof item.text === 'string') {
+          return item.text;
+        }
+        if (typeof item.content === 'string') {
+          return item.content;
+        }
+        return '';
+      })
+      .join('');
+
+    if (merged.trim().length === 0) {
+      throw new Error('AI 响应 content 数组不包含文本内容');
+    }
+
+    return merged;
+  }
+
+  throw new Error('AI 响应 content 类型未知');
+};
+
+/**
+ * 锁定笔记进行AI分析（内部函数）
+ * @param supabase Supabase客户端
+ * @param noteId 笔记ID
+ * @param currentStatus 当前AI状态
+ */
+const lockNoteForAnalysis = async (
+  supabase: SupabaseClient,
+  noteId: string,
+  currentStatus: string | null | undefined,
+) => {
+  let query = supabase
+    .from('qiangua_note_info')
+    .update({ AiStatus: '分析中' })
+    .eq('NoteId', noteId)
+    .lt('CreatedAt', new Date().toISOString()); // 始终检查创建时间
+
+  // 动态处理当前状态
+  if (currentStatus === null || currentStatus === undefined) {
+    query = query.is('AiStatus', null);
+  } else {
+    query = query.eq('AiStatus', currentStatus);
+  }
+
+  const { error, data } = await query.select('NoteId');
+
+  if (error) {
+    throw new Error(`锁定笔记 ${noteId} 失败: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    throw new Error(`笔记 ${noteId} 状态已变更，无法锁定`);
+  }
+};
+
+/**
+ * 执行AI分析的核心逻辑
+ * @param note 笔记记录
+ * @returns 分析结果和响应文本
+ */
+export const executeAiAnalysis = async (note: NoteRecord) => {
+  const mediaUrls = collectMediaUrls(note);
+  const prompt = buildNoteAnalysisPrompt(note);
+
+  const aiResponse = await fetch(AI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${AI_API_TOKEN}`,
+    },
+    body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
+  });
+
+  if (!aiResponse.ok) {
+    let errorText: string | null = null;
+    try {
+      errorText = await aiResponse.text();
+    } catch {
+      errorText = aiResponse.statusText;
+    }
+    throw new Error(
+      `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
+    );
+  }
+
+  let responseBody: any;
+  let responseText: string;
+  try {
+    responseText = await aiResponse.text();
+    responseBody = JSON.parse(responseText);
+  } catch (error: any) {
+    throw new Error(`AI 接口响应解析失败: ${error.message}`);
+  }
+
+  const messageText = extractMessageText(responseBody);
+  const aiResult = parseAiResponseContent(messageText);
+
+  return {
+    aiResult,
+    responseText,
+  };
+};
+
+/**
+ * 更新分析成功状态到数据库
+ * @param noteId 笔记ID
+ * @param aiResult AI分析结果
+ * @param responseText AI响应的原始JSON文本
+ */
+export const updateAiAnalysisSuccess = async (
+  supabase: SupabaseClient,
+  noteId: string,
+  aiResult: AiAnalysisResult,
+  responseText: string,
+) => {
+  const { error } = await supabase
+    .from('qiangua_note_info')
+    .update({
+      AiStatus: '分析成功',
+      AiSummary: aiResult.summary,
+      AiContentType: aiResult.contentType,
+      AiRelatedProducts: aiResult.relatedProducts,
+      AiJson: responseText,
+      AiErr: null,
+    })
+    .eq('NoteId', noteId);
+
+  if (error) {
+    throw new Error(
+      `写入笔记 ${noteId} AI 分析结果失败: ${error.message ?? '未知错误'}`,
+    );
+  }
+};
+
+/**
+ * 判断是否为可重试的错误
+ * @param errorMessage 错误信息
+ * @returns 是否可重试
+ */
+const isRetryableError = (errorMessage: string): boolean => {
+  return errorMessage.includes('被封禁') || errorMessage.includes('无可用渠道');
+};
+
+/**
+ * 更新分析失败状态到数据库
+ * @param noteId 笔记ID
+ * @param errorMessage 错误信息
+ */
+export const updateAiAnalysisFailure = async (
+  supabase: SupabaseClient,
+  noteId: string,
+  errorMessage: string,
+) => {
+  // 判断是否为可重试的错误
+  const canRetry = isRetryableError(errorMessage);
+  
+  await supabase
+    .from('qiangua_note_info')
+    .update({
+      AiStatus: canRetry ? '待分析' : '分析失败',
+      AiSummary: null,
+      AiContentType: null,
+      AiRelatedProducts: null,
+      AiJson: null,
+      AiErr: errorMessage,
+    })
+    .eq('NoteId', noteId);
+};
+
+/**
+ * 执行完整的AI分析流程（查询 -> 校验 -> 锁定 -> 执行 -> 更新状态）
+ * @param noteIdOrRecord 笔记ID或笔记记录对象
+ * @returns 分析结果
+ */
+export const processNoteAiAnalysis = async (
+  noteIdOrRecord: string | NoteRecord,
+) => {
+  const supabase = getServiceSupabaseClient();
+  const startTime = Date.now();
+  
+  try {
+    let note: NoteRecord;
+
+    // 如果传入的是字符串ID，则查询笔记
+    if (typeof noteIdOrRecord === 'string') {
+      const noteId = noteIdOrRecord;
+      const { data, error: fetchError } = await supabase
+        .from('qiangua_note_info')
+        .select('*')
+        .eq('NoteId', noteId)
+        .single();
+
+      if (fetchError || !data) {
+        log.error('笔记查询失败', { noteId }, fetchError?.message || '笔记不存在');
+        throw new Error('笔记不存在');
+      }
+
+      note = data as NoteRecord;
+    } else {
+      // 直接使用传入的笔记对象
+      note = noteIdOrRecord;
+    }
+
+    log.info('AI分析开始', { noteId: note.NoteId, aiStatus: note.AiStatus });
+
+    // 执行状态和内容校验（始终校验）
+    if (note.AiStatus !== '待分析' && note.AiStatus !== '分析失败') {
+      const error = `笔记当前状态为"${note.AiStatus}"，无法进行分析`;
+      log.warning('AI分析状态校验失败', { noteId: note.NoteId, aiStatus: note.AiStatus }, error);
+      throw new Error(error);
+    }
+
+    const content = note.XhsContent || note.Content;
+    if (!content || content.trim().length === 0) {
+      log.warning('AI分析内容校验失败', { noteId: note.NoteId }, '笔记内容为空');
+      throw new Error('笔记内容为空，无法进行分析');
+    }
+
+    // 1. 锁定笔记
+    await lockNoteForAnalysis(supabase, note.NoteId, note.AiStatus);
+
+    // 2. 执行AI分析
+    const { aiResult, responseText } = await executeAiAnalysis(note);
+
+    // 3. 更新成功状态
+    await updateAiAnalysisSuccess(supabase, note.NoteId, aiResult, responseText);
+
+    const duration = Date.now() - startTime;
+    log.info('AI分析成功', {
+      noteId: note.NoteId,
+      duration: `${duration}ms`,
+      contentType: aiResult.contentType,
+    });
+
+    return {
+      success: true,
+      aiStatus: '分析成功' as const,
+      aiContentType: aiResult.contentType,
+      aiRelatedProducts: aiResult.relatedProducts,
+      aiSummary: aiResult.summary,
+    };
+  } catch (error: any) {
+    // 更新失败状态
+    const errorMessage = error?.message || '未知错误';
+    const noteId = typeof noteIdOrRecord === 'string' 
+      ? noteIdOrRecord 
+      : noteIdOrRecord.NoteId;
+    
+    const canRetry = isRetryableError(errorMessage);
+    await updateAiAnalysisFailure(supabase, noteId, errorMessage);
+
+    const duration = Date.now() - startTime;
+    
+    // 根据是否可重试记录不同级别的日志
+    if (canRetry) {
+      log.warning('AI分析失败(可重试)', {
+        noteId,
+        duration: `${duration}ms`,
+        willRetry: true,
+      }, error);
+    } else {
+      log.error('AI分析失败(不可重试)', {
+        noteId,
+        duration: `${duration}ms`,
+        willRetry: false,
+      }, error);
+    }
+
+    return {
+      success: false,
+      aiStatus: canRetry ? '待分析' as const : '分析失败' as const,
+      aiErr: errorMessage,
+      aiContentType: null,
+      aiRelatedProducts: null,
+      aiSummary: null,
+    };
+  }
+};
+
 export const fetchNextPendingNote = async (
   supabase: SupabaseClient,
 ): Promise<NoteRecord | null> => {
@@ -235,5 +575,4 @@ export const fetchNextPendingNote = async (
 
   return data as NoteRecord;
 };
-
 
