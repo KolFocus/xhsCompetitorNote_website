@@ -10,7 +10,7 @@ import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 
 const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
 const BATCH_SIZE = 5; // 每次批量启动的任务数量
-const REQUEST_INTERVAL = 1000; // 请求之间的延时（毫秒）
+const REQUEST_INTERVAL = 4000; // 请求之间的延时（毫秒）
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic'; // 禁用缓存，确保每次请求都执行

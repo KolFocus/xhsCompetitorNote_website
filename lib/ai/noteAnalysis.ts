@@ -293,6 +293,7 @@ export const extractMessageText = (responseBody: any): string => {
  * @param supabase Supabase客户端
  * @param noteId 笔记ID
  * @param currentStatus 当前AI状态
+ * @throws 如果锁定失败抛出特殊错误 'LOCK_CONFLICT'
  */
 const lockNoteForAnalysis = async (
   supabase: SupabaseClient,
@@ -319,7 +320,10 @@ const lockNoteForAnalysis = async (
   }
 
   if (!data || data.length === 0) {
-    throw new Error(`笔记 ${noteId} 状态已变更，无法锁定`);
+    // 乐观锁冲突：其他进程已经锁定了这个笔记
+    const lockError = new Error(`笔记 ${noteId} 状态已变更，无法锁定`);
+    (lockError as any).code = 'LOCK_CONFLICT';
+    throw lockError;
   }
 };
 
@@ -487,7 +491,27 @@ export const processNoteAiAnalysis = async (
     }
 
     // 1. 锁定笔记
-    await lockNoteForAnalysis(supabase, note.NoteId, note.AiStatus);
+    try {
+      await lockNoteForAnalysis(supabase, note.NoteId, note.AiStatus);
+    } catch (lockError: any) {
+      // 如果是锁定冲突，说明其他进程正在处理，静默忽略
+      if (lockError.code === 'LOCK_CONFLICT') {
+        log.info('笔记已被其他进程锁定，跳过', {
+          noteId: note.NoteId,
+          duration: `${Date.now() - startTime}ms`,
+        });
+        return {
+          success: false,
+          aiStatus: '分析中' as const,
+          aiErr: '笔记已被其他进程锁定',
+          aiContentType: null,
+          aiRelatedProducts: null,
+          aiSummary: null,
+        };
+      }
+      // 其他锁定错误继续抛出
+      throw lockError;
+    }
 
     // 2. 执行AI分析
     const { aiResult, responseText } = await executeAiAnalysis(note);
