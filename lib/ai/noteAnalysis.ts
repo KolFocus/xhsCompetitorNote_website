@@ -2,12 +2,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { log } from '@/lib/logger';
 import { getServiceSupabaseClient } from '@/lib/supabase/admin';
+import { getSystemConfig, CONFIG_KEYS } from '@/lib/systemConfig';
 import { fixImageUrl } from '@/lib/utils/dataTransform';
 
 // AI 配置常量
 export const AI_API_URL = 'https://www.chataiapi.com/v1/chat/completions';
 export const AI_API_TOKEN = 'sk-elbujPUOtXGyEC8TnnesrJpXpYJGRPANv9qRGUEaEHiSNwAT';
-export const AI_MODEL = 'gemini-2.5-flash';
+export const AI_MODEL_DEFAULT = 'gemini-2.5-flash'; // 默认模型
+
+/**
+ * 获取当前AI模型配置
+ */
+export const getAiModel = async (): Promise<string> => {
+  const model = await getSystemConfig(CONFIG_KEYS.AI_MODEL);
+  return model || AI_MODEL_DEFAULT;
+};
 
 export interface NoteRecord extends Record<string, any> {
   NoteId: string;
@@ -217,7 +226,7 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
 /**
  * 构建AI请求的payload
  */
-export const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
+export const buildAiRequestPayload = async (prompt: string, mediaUrls: string[]) => {
   const content: Array<Record<string, any>> = [
     {
       type: 'text',
@@ -234,8 +243,11 @@ export const buildAiRequestPayload = (prompt: string, mediaUrls: string[]) => {
     });
   }
 
+  // 从数据库获取当前配置的模型
+  const model = await getAiModel();
+
   return {
-    model: AI_MODEL,
+    model,
     messages: [
       {
         role: 'user',
@@ -338,6 +350,7 @@ const lockNoteForAnalysis = async (
 export const executeAiAnalysis = async (note: NoteRecord) => {
   const mediaUrls = collectMediaUrls(note);
   const prompt = buildNoteAnalysisPrompt(note);
+  const payload = await buildAiRequestPayload(prompt, mediaUrls);
 
   const aiResponse = await fetch(AI_API_URL, {
     method: 'POST',
@@ -345,7 +358,7 @@ export const executeAiAnalysis = async (note: NoteRecord) => {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${AI_API_TOKEN}`,
     },
-    body: JSON.stringify(buildAiRequestPayload(prompt, mediaUrls)),
+    body: JSON.stringify(payload),
   });
 
   if (!aiResponse.ok) {

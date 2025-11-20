@@ -7,6 +7,7 @@ import {
 } from '@/lib/ai/noteAnalysis';
 import { log } from '@/lib/logger';
 import { getServiceSupabaseClient } from '@/lib/supabase/admin';
+import { getSystemConfig, CONFIG_KEYS } from '@/lib/systemConfig';
 
 const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
 const BATCH_SIZE = 5; // 每次批量启动的任务数量
@@ -98,6 +99,16 @@ export async function GET() {
   const supabase = getServiceSupabaseClient();
 
   try {
+    // 检查AI分析总开关
+    const aiEnabled = await getSystemConfig(CONFIG_KEYS.AI_ANALYSIS_ENABLED);
+    if (aiEnabled === 'false') {
+      return createResponse({
+        success: true,
+        data: null,
+        message: 'AI 分析已停止',
+      });
+    }
+
     // 检查当前分析中的数量
     const {
       data: inProgress,
