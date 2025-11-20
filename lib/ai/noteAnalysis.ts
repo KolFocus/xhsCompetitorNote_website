@@ -253,7 +253,10 @@ export const extractMessageText = (responseBody: any): string => {
   const message = choice?.message;
 
   if (!message) {
-    throw new Error('AI 响应缺少 message 字段');
+    // 打印完整的 responseBody 用于调试
+    const responseBodyStr = JSON.stringify(responseBody, null, 2);
+    console.error('AI 响应缺少 message 字段，完整响应:', responseBodyStr);
+    throw new Error(`AI 响应缺少 message 字段。完整响应: ${responseBodyStr}`);
   }
 
   const { content } = message;
