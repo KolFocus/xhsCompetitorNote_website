@@ -8,6 +8,8 @@ import {
   BarChartOutlined,
   TagOutlined,
   AppstoreOutlined,
+  SettingOutlined,
+  RobotOutlined,
 } from '@ant-design/icons';
 import { MenuItem } from '../types';
 
@@ -48,6 +50,19 @@ export const menuItems: MenuItem[] = [
     label: '分析报告',
     icon: <BarChartOutlined />,
     path: '/dashboard/reports',
+  },
+  {
+    key: 'system',
+    label: '系统管理',
+    icon: <SettingOutlined />,
+    children: [
+      {
+        key: 'system-ai-analysis',
+        label: 'AI分析',
+        icon: <RobotOutlined />,
+        path: '/dashboard/system/ai-analysis',
+      },
+    ],
   },
 ];
 

@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
+    const aiStatus = searchParams.get('aiStatus'); // 新增：AI状态筛选
 
     // 验证分页参数
     if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -136,6 +137,9 @@ export async function GET(request: NextRequest) {
       if (endDate) {
         query = query.lte('PubDate', endDate);
       }
+      if (aiStatus) {
+        query = query.eq('AiStatus', aiStatus);
+      }
 
       // 应用排序
       const ascending = order === 'asc';
@@ -191,6 +195,9 @@ export async function GET(request: NextRequest) {
       }
       if (endDate) {
         query = query.lte('PubDate', endDate);
+      }
+      if (aiStatus) {
+        query = query.eq('AiStatus', aiStatus);
       }
 
       // 应用排序
