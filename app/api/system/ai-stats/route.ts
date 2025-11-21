@@ -13,47 +13,50 @@ export async function GET() {
   try {
     const supabase = getServiceSupabaseClient();
 
-    // 1. 待分析
-    const { count: pendingCount } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '待分析')
-      .not('XhsNoteLink', 'is', null)
-      .neq('XhsNoteLink', '');
+    // 并发执行所有查询以提高效率
+    const [
+      { count: pendingCount },
+      { count: processingCount },
+      { count: failedCount },
+      { count: noContentCount },
+    ] = await Promise.all([
+      // 1. 待分析（排除 XhsNoteLink 为空）
+      supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .eq('AiStatus', '待分析')
+        .not('XhsNoteLink', 'is', null)
+        .neq('XhsNoteLink', ''),
 
-    // 2. 分析中
-    const { count: processingCount } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '分析中')
-      .not('XhsNoteLink', 'is', null)
-      .neq('XhsNoteLink', '');
+      // 2. 分析中（排除 XhsNoteLink 为空）
+      supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .eq('AiStatus', '分析中')
+        .not('XhsNoteLink', 'is', null)
+        .neq('XhsNoteLink', ''),
 
-    // 3. 分析失败
-    const { count: failedCount } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '分析失败')
-      .not('XhsNoteLink', 'is', null)
-      .neq('XhsNoteLink', '');
+      // 3. 分析失败（排除 XhsNoteLink 为空）
+      supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .eq('AiStatus', '分析失败')
+        .not('XhsNoteLink', 'is', null)
+        .neq('XhsNoteLink', ''),
 
-    // 4. 无内容（XhsNoteLink 为空）
-    const { count: noContentCount } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true })
-      .or('XhsNoteLink.is.null,XhsNoteLink.eq.');
-
-    // 5. 总数
-    const { count: totalCount } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true });
+      // 4. 无内容（XhsNoteLink 为空）
+      supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .or('XhsNoteLink.is.null,XhsNoteLink.eq.'),
+    ]);
 
     const stats = {
       pending: pendingCount || 0,
       processing: processingCount || 0,
       failed: failedCount || 0,
       noContent: noContentCount || 0,
-      total: totalCount || 0,
+      total: 0, // 前端暂不显示总数，避免额外查询开销
     };
 
     return NextResponse.json({
