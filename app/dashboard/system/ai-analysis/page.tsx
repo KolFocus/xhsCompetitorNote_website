@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Row,
@@ -63,9 +63,11 @@ export default function AiAnalysisPage() {
   const [aiModel, setAiModel] = useState<string>('gemini-2.5-flash');
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   const [exporting, setExporting] = useState(false);
+  const [exportingNoContent, setExportingNoContent] = useState(false);
+  const [countdown, setCountdown] = useState(60);
 
   // 加载统计数据
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     try {
       setLoading(true);
       const response = await fetch('/api/system/ai-stats');
@@ -82,7 +84,7 @@ export default function AiAnalysisPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 加载配置
   const loadConfig = async () => {
@@ -115,6 +117,31 @@ export default function AiAnalysisPage() {
     loadStats();
     loadConfig();
   }, []);
+
+  // 自动刷新和倒计时
+  useEffect(() => {
+    // 倒计时定时器
+    const countdownTimer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // 倒计时到0时，刷新数据并重置倒计时
+          loadStats();
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => {
+      clearInterval(countdownTimer);
+    };
+  }, [loadStats]);
+
+  // 手动刷新
+  const handleRefresh = () => {
+    loadStats();
+    setCountdown(60); // 重置倒计时
+  };
 
   // 重置状态
   const handleReset = (status: string, statusLabel: string) => {
@@ -251,6 +278,107 @@ export default function AiAnalysisPage() {
     }
   };
 
+  // 导出笔记详情缺失列表
+  const handleExportNoContent = async () => {
+    if (exportingNoContent) {
+      console.log('正在导出中，请稍候...');
+      return;
+    }
+    
+    try {
+      setExportingNoContent(true);
+      console.log('开始导出笔记详情缺失列表...');
+
+      // 分页获取所有无内容记录
+      const allNotes: FailedNote[] = [];
+      let page = 1;
+      const pageSize = 100; // API 限制最大 100
+      let hasMore = true;
+
+      while (hasMore) {
+        const params = new URLSearchParams({
+          aiStatus: '无内容',
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+
+        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
+        const response = await fetch(`/api/notes?${params.toString()}`);
+        
+        if (!response.ok) {
+          throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || '获取数据失败');
+        }
+
+        const notes: FailedNote[] = result.data.list || [];
+        const total = result.data.total || 0;
+        
+        console.log(`第 ${page} 页获取到 ${notes.length} 条记录，总共 ${total} 条`);
+        
+        allNotes.push(...notes);
+        
+        // 判断是否还有更多数据
+        if (allNotes.length >= total || notes.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+
+      console.log(`总共获取到 ${allNotes.length} 条笔记详情缺失记录`);
+
+      if (allNotes.length === 0) {
+        message.warning('暂无笔记详情缺失记录可导出');
+        return;
+      }
+
+      // 动态导入 xlsx
+      console.log('开始导入 xlsx 库...');
+      const XLSX = await import('xlsx');
+      console.log('xlsx 库导入成功');
+
+      // 准备导出数据
+      const exportData = allNotes.map((note) => ({
+        笔记ID: note.NoteId,
+        标题: note.Title || '',
+        博主: note.BloggerNickName || '',
+        品牌: note.BrandName || '',
+        发布时间: note.PublishTime || '',
+      }));
+
+      console.log('准备创建工作表...');
+      // 创建工作表
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '笔记详情缺失列表');
+
+      // 生成文件名
+      const now = new Date();
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const filename = `笔记详情缺失列表_${timestamp}.xlsx`;
+
+      console.log('开始下载文件:', filename);
+      // 下载文件
+      XLSX.writeFile(workbook, filename);
+      console.log('文件下载完成');
+      
+      message.success(`导出成功，共 ${allNotes.length} 条记录`);
+    } catch (error) {
+      console.error('导出失败 - 详细错误:', error);
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      message.error(`导出失败: ${errorMsg}`);
+    } finally {
+      setExportingNoContent(false);
+      console.log('导出流程结束');
+    }
+  };
+
   // 更新模型配置
   const handleModelChange = (e: RadioChangeEvent) => {
     const newModel = e.target.value;
@@ -344,8 +472,8 @@ export default function AiAnalysisPage() {
         <Card
           title="当前分析情况"
           extra={
-            <Button icon={<ReloadOutlined />} onClick={loadStats}>
-              刷新
+            <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
+              刷新 ({countdown}s)
             </Button>
           }
           style={{ marginBottom: 24 }}
@@ -438,11 +566,38 @@ export default function AiAnalysisPage() {
 
             <Col xs={24} sm={12} md={6}>
               <Card>
-                <Statistic
-                  title="笔记详情缺失"
-                  value={stats?.noContent || 0}
-                  valueStyle={{ color: '#8c8c8c' }}
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Statistic
+                    title="笔记详情缺失"
+                    value={stats?.noContent || 0}
+                    valueStyle={{ color: '#8c8c8c' }}
+                  />
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'export',
+                          label: '导出列表',
+                          icon: <DownloadOutlined />,
+                          disabled: exportingNoContent,
+                        },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'export') {
+                          handleExportNoContent();
+                        }
+                      },
+                    }}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<MoreOutlined />}
+                      loading={exportingNoContent}
+                    />
+                  </Dropdown>
+                </div>
               </Card>
             </Col>
           </Row>

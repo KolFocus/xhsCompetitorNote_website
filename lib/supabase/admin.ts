@@ -33,6 +33,12 @@ export const getServiceSupabaseClient = (): SupabaseClient => {
         'Pragma': 'no-cache',
         'Expires': '0',
       },
+      fetch: (url, options) => {
+        return fetch(url, {
+          ...options,
+          cache: 'no-store',
+        });
+      },
     },
   });
 
