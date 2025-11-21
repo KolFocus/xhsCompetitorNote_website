@@ -94,6 +94,7 @@ interface NotesResponse {
     total: number;
     page: number;
     pageSize: number;
+    noteTags?: Record<string, TagDTO[]>;
   };
   error?: string;
 }
@@ -275,6 +276,22 @@ const NoteTaggingPage: React.FC = () => {
         params.set('endDate', dateRange[1].format('YYYY-MM-DD'));
       }
 
+      // 添加标签筛选参数
+      if (selectedTagSetId) {
+        params.set('tagSetId', selectedTagSetId);
+      }
+      if (filterTagId) {
+        params.set('tagFilter', filterTagId);
+      }
+      
+      // 添加数据状态筛选参数
+      if (showUnanalyzed) {
+        params.set('showUnanalyzed', 'true');
+      }
+      if (showMissingContent) {
+        params.set('showMissingContent', 'true');
+      }
+
       const response = await fetch(`/api/notes?${params.toString()}`);
       const result: NotesResponse = await response.json();
 
@@ -283,46 +300,37 @@ const NoteTaggingPage: React.FC = () => {
         return;
       }
 
+      console.log('[Frontend] Received data:', {
+        listCount: result.data.list.length,
+        total: result.data.total,
+        noteTagsCount: result.data.noteTags ? Object.keys(result.data.noteTags).length : 0,
+        noteTags: result.data.noteTags,
+      });
+      
+      // 检查是否有提示消息
+      if ((result.data as any).message) {
+        message.warning((result.data as any).message);
+      }
+      
       setNoteList(result.data.list);
       setNoteTotal(result.data.total);
       setPage(result.data.page);
       setPageSize(result.data.pageSize);
-      await loadNoteTags(result.data.list, selectedTagSetId);
+      
+      // 使用后端返回的标签数据
+      if (result.data.noteTags) {
+        console.log('[Frontend] Setting noteTags:', result.data.noteTags);
+        setNoteTags(result.data.noteTags);
+      } else {
+        console.log('[Frontend] No noteTags in response, setting empty');
+        setNoteTags({});
+      }
     } catch (error) {
       console.error('Failed to load notes', error);
       message.error('加载笔记失败');
     } finally {
       setNotesLoading(false);
     }
-  };
-
-  const loadNoteTags = async (notes: NoteRecord[], tagSetId: string) => {
-    if (notes.length === 0) {
-      setNoteTags({});
-      return;
-    }
-
-    const requests = notes.map((note) =>
-      fetch(`/api/notes/${note.NoteId}/tags?tagSetId=${tagSetId}`)
-        .then((resp) => resp.json())
-        .then((payload) => {
-          if (payload.success) {
-            return { noteId: note.NoteId, tags: payload.data.tags as TagDTO[] };
-          }
-          throw new Error(payload.error || '加载标签失败');
-        })
-        .catch((error) => {
-          console.error(`Failed to load tags for note ${note.NoteId}`, error);
-          return { noteId: note.NoteId, tags: [] as TagDTO[] };
-        }),
-    );
-
-    const results = await Promise.all(requests);
-    const nextMap: NoteTagMap = {};
-    for (const item of results) {
-      nextMap[item.noteId] = item.tags;
-    }
-    setNoteTags(nextMap);
   };
 
   useEffect(() => {
@@ -338,7 +346,7 @@ const NoteTaggingPage: React.FC = () => {
     if (selectedTagSetId) {
       loadNotes(1, pageSize);
     }
-  }, [selectedReportId, selectedBrand, selectedBlogger, dateRange]);
+  }, [selectedReportId, selectedBrand, selectedBlogger, dateRange, filterTagId, showUnanalyzed, showMissingContent]);
 
   const handleTagChange = (noteId: string, value: string[]) => {
     if (!selectedTagSetId) return;
@@ -441,41 +449,18 @@ const NoteTaggingPage: React.FC = () => {
     }
   };
 
+  // 前端只需要过滤掉正在分析中的笔记（如果开启了showUnanalyzed筛选）
   const filteredNotes = useMemo(() => {
+    if (!showUnanalyzed) {
+      return noteList;
+    }
+    
     return noteList.filter((note) => {
-      const assignedTags = noteTags[note.NoteId] || [];
-
-      // 标签筛选逻辑
-      if (filterTagId === '__untagged__') {
-        // 仅显示未打标笔记
-        if (assignedTags.length > 0) {
-        return false;
-      }
-      } else if (filterTagId) {
-        // 显示指定标签的笔记
-        if (!assignedTags.some((tag) => tag.tagId === filterTagId)) {
-        return false;
-      }
-      }
-      // filterTagId 为 null 时显示所有笔记
-
-      // 未AI分析筛选
-      if (showUnanalyzed) {
-        const hasAiData = note.AiContentType || note.AiRelatedProducts || note.AiSummary;
-        const isAnalyzing = note.AiStatus === '分析中' || analyzingNoteIds.has(note.NoteId);
-        if (hasAiData || isAnalyzing) return false; // 已分析或分析中，过滤掉
-      }
-
-      // 缺失内容筛选
-      if (showMissingContent) {
-        const hasContent = (note.Content && note.Content.trim()) || 
-                          (note.XhsContent && note.XhsContent.trim());
-        if (hasContent) return false; // 有内容，过滤掉
-      }
-
-      return true;
+      // 如果开启了"仅显示未分析"筛选，需要排除正在分析中的笔记
+      const isAnalyzing = analyzingNoteIds.has(note.NoteId);
+      return !isAnalyzing;
     });
-  }, [noteList, noteTags, filterTagId, showUnanalyzed, showMissingContent, analyzingNoteIds]);
+  }, [noteList, showUnanalyzed, analyzingNoteIds]);
 
   const handleBulkTagging = async () => {
     if (!selectedTagSetId || bulkSelectedTagIds.length === 0) {
@@ -1009,7 +994,7 @@ const NoteTaggingPage: React.FC = () => {
               dataSource={filteredNotes}
               columns={columns}
               pagination={{
-                total: filteredNotes.length,
+                total: noteTotal,
                 current: page,
                 pageSize,
                 showSizeChanger: true,
