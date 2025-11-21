@@ -15,7 +15,9 @@ import {
   Spin,
   Typography,
   Divider,
+  Dropdown,
 } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   RobotOutlined,
   ReloadOutlined,
@@ -23,6 +25,8 @@ import {
   DownloadOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  MoreOutlined,
+  RedoOutlined,
 } from '@ant-design/icons';
 import type { RadioChangeEvent } from 'antd';
 
@@ -147,37 +151,70 @@ export default function AiAnalysisPage() {
 
   // 导出失败列表
   const handleExport = async () => {
-    if (exporting) return;
+    if (exporting) {
+      console.log('正在导出中，请稍候...');
+      return;
+    }
     
     try {
       setExporting(true);
+      console.log('开始导出失败列表...');
 
-      // 查询所有分析失败的笔记
-      const params = new URLSearchParams({
-        aiStatus: '分析失败',
-        page: '1',
-        pageSize: '10000',
-      });
+      // 分页获取所有失败记录
+      const allNotes: FailedNote[] = [];
+      let page = 1;
+      const pageSize = 100; // API 限制最大 100
+      let hasMore = true;
 
-      const response = await fetch(`/api/notes?${params.toString()}`);
-      const result = await response.json();
+      while (hasMore) {
+        const params = new URLSearchParams({
+          aiStatus: '分析失败',
+          page: String(page),
+          pageSize: String(pageSize),
+        });
 
-      if (!result.success) {
-        throw new Error(result.error || '获取数据失败');
+        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
+        const response = await fetch(`/api/notes?${params.toString()}`);
+        
+        if (!response.ok) {
+          throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || '获取数据失败');
+        }
+
+        const notes: FailedNote[] = result.data.list || [];
+        const total = result.data.total || 0;
+        
+        console.log(`第 ${page} 页获取到 ${notes.length} 条记录，总共 ${total} 条`);
+        
+        allNotes.push(...notes);
+        
+        // 判断是否还有更多数据
+        if (allNotes.length >= total || notes.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
       }
 
-      const notes: FailedNote[] = result.data.list || [];
+      console.log(`总共获取到 ${allNotes.length} 条失败记录`);
 
-      if (notes.length === 0) {
+      if (allNotes.length === 0) {
         message.warning('暂无失败记录可导出');
         return;
       }
 
       // 动态导入 xlsx
+      console.log('开始导入 xlsx 库...');
       const XLSX = await import('xlsx');
+      console.log('xlsx 库导入成功');
 
       // 准备导出数据
-      const exportData = notes.map((note) => ({
+      const exportData = allNotes.map((note) => ({
         笔记ID: note.NoteId,
         标题: note.Title || '',
         博主: note.BloggerNickName || '',
@@ -186,6 +223,7 @@ export default function AiAnalysisPage() {
         错误原因: note.AiErr || '',
       }));
 
+      console.log('准备创建工作表...');
       // 创建工作表
       const worksheet = XLSX.utils.json_to_sheet(exportData);
       const workbook = XLSX.utils.book_new();
@@ -197,14 +235,19 @@ export default function AiAnalysisPage() {
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
       const filename = `AI分析失败列表_${timestamp}.xlsx`;
 
+      console.log('开始下载文件:', filename);
       // 下载文件
       XLSX.writeFile(workbook, filename);
-      message.success(`导出成功，共 ${notes.length} 条记录`);
+      console.log('文件下载完成');
+      
+      message.success(`导出成功，共 ${allNotes.length} 条记录`);
     } catch (error) {
-      console.error('导出失败:', error);
-      message.error('导出失败，请稍后重试');
+      console.error('导出失败 - 详细错误:', error);
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      message.error(`导出失败: ${errorMsg}`);
     } finally {
       setExporting(false);
+      console.log('导出流程结束');
     }
   };
 
@@ -290,12 +333,6 @@ export default function AiAnalysisPage() {
     });
   };
 
-  // 计算百分比
-  const getPercentage = (count: number): number => {
-    if (!stats || stats.total === 0) return 0;
-    return Math.round((count / stats.total) * 100);
-  };
-
   return (
     <div style={{ padding: 24 }}>
       <Title level={2}>
@@ -319,7 +356,6 @@ export default function AiAnalysisPage() {
                 <Statistic
                   title="待分析"
                   value={stats?.pending || 0}
-                  suffix={`/ ${getPercentage(stats?.pending || 0)}%`}
                   valueStyle={{ color: '#1890ff' }}
                 />
               </Card>
@@ -327,65 +363,86 @@ export default function AiAnalysisPage() {
 
             <Col xs={24} sm={12} md={6}>
               <Card>
-                <Statistic
-                  title="分析中"
-                  value={stats?.processing || 0}
-                  suffix={`/ ${getPercentage(stats?.processing || 0)}%`}
-                  valueStyle={{ color: '#faad14' }}
-                />
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => handleReset('分析中', '分析中')}
-                  style={{ marginTop: 8, padding: 0 }}
-                >
-                  重置状态
-                </Button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Statistic
+                    title="分析中"
+                    value={stats?.processing || 0}
+                    valueStyle={{ color: '#faad14' }}
+                  />
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'reset',
+                          label: '重置状态',
+                          icon: <RedoOutlined />,
+                        },
+                      ],
+                      onClick: () => handleReset('分析中', '分析中'),
+                    }}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<MoreOutlined />}
+                    />
+                  </Dropdown>
+                </div>
+              </Card>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <Card>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Statistic
+                    title="分析失败"
+                    value={stats?.failed || 0}
+                    valueStyle={{ color: '#ff4d4f' }}
+                  />
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'reset',
+                          label: '重置状态',
+                          icon: <RedoOutlined />,
+                        },
+                        {
+                          key: 'export',
+                          label: '导出列表',
+                          icon: <DownloadOutlined />,
+                          disabled: exporting,
+                        },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'reset') {
+                          handleReset('分析失败', '分析失败');
+                        } else if (key === 'export') {
+                          handleExport();
+                        }
+                      },
+                    }}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<MoreOutlined />}
+                      loading={exporting}
+                    />
+                  </Dropdown>
+                </div>
               </Card>
             </Col>
 
             <Col xs={24} sm={12} md={6}>
               <Card>
                 <Statistic
-                  title="分析失败"
-                  value={stats?.failed || 0}
-                  suffix={`/ ${getPercentage(stats?.failed || 0)}%`}
-                  valueStyle={{ color: '#ff4d4f' }}
-                />
-                <Space style={{ marginTop: 8 }}>
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => handleReset('分析失败', '分析失败')}
-                    style={{ padding: 0 }}
-                  >
-                    重置状态
-                  </Button>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={handleExport}
-                    loading={exporting}
-                    style={{ padding: 0 }}
-                  >
-                    导出列表
-                  </Button>
-                </Space>
-              </Card>
-            </Col>
-
-            <Col xs={24} sm={12} md={6}>
-              <Card>
-                <Statistic
-                  title="无内容"
+                  title="笔记详情缺失"
                   value={stats?.noContent || 0}
-                  suffix={`/ ${getPercentage(stats?.noContent || 0)}%`}
                   valueStyle={{ color: '#8c8c8c' }}
                 />
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  笔记内容缺失
-                </Text>
               </Card>
             </Col>
           </Row>
