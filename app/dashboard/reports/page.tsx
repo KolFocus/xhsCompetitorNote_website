@@ -96,6 +96,7 @@ interface Note {
   noteId: string;
   title: string;
   content: string | null;
+  xhsContent: string | null;
   coverImage: string | null;
   xhsNoteLink: string | null;
   noteType: string;
@@ -207,6 +208,13 @@ export default function ReportsPage() {
     loadReports();
   }, []);
 
+  // 保存选中的报告 ID 到 localStorage
+  useEffect(() => {
+    if (reportId && typeof window !== 'undefined') {
+      localStorage.setItem('lastViewedReportId', reportId);
+    }
+  }, [reportId]);
+
   // 保存显示AI分析的状态到 localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -230,9 +238,18 @@ export default function ReportsPage() {
       const data = await response.json();
       if (data.success) {
         setReports(data.data.list);
-        // 默认选中最新创建的报告
+        // 默认选中逻辑
         if (data.data.list.length > 0 && !reportId) {
-          setReportId(data.data.list[0].reportId);
+          // 尝试从 localStorage 读取上次查看的报告 ID
+          const lastReportId = localStorage.getItem('lastViewedReportId');
+          // 检查上次的 ID 是否在当前列表中
+          const foundReport = lastReportId ? data.data.list.find((r: Report) => r.reportId === lastReportId) : null;
+          
+          if (foundReport) {
+            setReportId(foundReport.reportId);
+          } else {
+            setReportId(data.data.list[0].reportId);
+          }
         }
       }
     } catch (error) {
@@ -489,7 +506,7 @@ export default function ReportsPage() {
             width: 300,
             fixed: 'left' as const,
             render: (_: unknown, record: Note) => {
-              const content = record.content?.trim() || '';
+              const content = (record.xhsContent || record.content)?.trim() || '';
               const tooltipContent = content ? (
                 <div
                   className="tooltip-scrollable"
@@ -624,7 +641,7 @@ export default function ReportsPage() {
             fixed: 'left' as const,
             ellipsis: true,
             render: (text: string, record: Note) => {
-              const content = record.content?.trim() || '';
+              const content = (record.xhsContent || record.content)?.trim() || '';
               const tooltipContent = content ? (
                 <div
                   className="tooltip-scrollable"

@@ -17,26 +17,31 @@ export async function GET() {
     const { count: pendingCount } = await supabase
       .from('qiangua_note_info')
       .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '待分析');
+      .eq('AiStatus', '待分析')
+      .not('XhsNoteLink', 'is', null)
+      .neq('XhsNoteLink', '');
 
     // 2. 分析中
     const { count: processingCount } = await supabase
       .from('qiangua_note_info')
       .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '分析中');
+      .eq('AiStatus', '分析中')
+      .not('XhsNoteLink', 'is', null)
+      .neq('XhsNoteLink', '');
 
     // 3. 分析失败
     const { count: failedCount } = await supabase
       .from('qiangua_note_info')
       .select('NoteId', { count: 'exact', head: true })
-      .eq('AiStatus', '分析失败');
+      .eq('AiStatus', '分析失败')
+      .not('XhsNoteLink', 'is', null)
+      .neq('XhsNoteLink', '');
 
-    // 4. 无内容（Content 和 XhsContent 都为空）
+    // 4. 无内容（XhsNoteLink 为空）
     const { count: noContentCount } = await supabase
       .from('qiangua_note_info')
       .select('NoteId', { count: 'exact', head: true })
-      .or('Content.is.null,Content.eq.')
-      .or('XhsContent.is.null,XhsContent.eq.');
+      .or('XhsNoteLink.is.null,XhsNoteLink.eq.');
 
     // 5. 总数
     const { count: totalCount } = await supabase

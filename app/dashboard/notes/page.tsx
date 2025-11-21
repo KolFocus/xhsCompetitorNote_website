@@ -566,7 +566,7 @@ export default function NotesPage() {
             width: 300,
             fixed: 'left' as const,
             render: (_: unknown, record: Note) => {
-              const content = record.Content?.trim() || '';
+              const content = (record.XhsContent || record.Content)?.trim() || '';
               const tooltipContent = content ? (
                 <div
                   className="tooltip-scrollable"
@@ -702,7 +702,7 @@ export default function NotesPage() {
             fixed: 'left' as const,
             ellipsis: true,
             render: (text: string, record: Note) => {
-              const content = record.Content?.trim() || '';
+              const content = (record.XhsContent || record.Content)?.trim() || '';
               const tooltipContent = content ? (
                 <div 
                   className="tooltip-scrollable"
@@ -1143,7 +1143,7 @@ export default function NotesPage() {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="缺失内容"
+              title="笔记详情缺失"
               value={stats?.missingContent ?? '-'}
               prefix={<FileExclamationOutlined />}
               valueStyle={{ color: '#ff4d4f' }}

@@ -612,8 +612,8 @@ const NoteTaggingPage: React.FC = () => {
                 placement="topLeft"
               >
                 <Title level={5} style={{ margin: 0, flex: 1, fontSize: 14 }}>
-              {value || '未命名笔记'}
-            </Title>
+                  {value || '未命名笔记'}
+                </Title>
               </Tooltip>
               {record.XhsNoteLink && (
                 <LinkOutlined
