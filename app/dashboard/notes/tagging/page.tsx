@@ -1009,10 +1009,11 @@ const NoteTaggingPage: React.FC = () => {
               dataSource={filteredNotes}
               columns={columns}
               pagination={{
-                total: noteTotal,
+                total: filteredNotes.length,
                 current: page,
                 pageSize,
                 showSizeChanger: true,
+                showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
                 onChange: (nextPage, nextSize) => {
                   setPage(nextPage);
                   setPageSize(nextSize);
