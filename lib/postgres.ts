@@ -5,6 +5,19 @@
 
 import { Pool, PoolClient } from 'pg';
 
+const requiredEnv = (key: string): string => {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`[lib/postgres] 环境变量 ${key} 未配置`);
+  }
+  return value;
+};
+
+const PG_HOST = requiredEnv('SUPABASE_PG_HOST');
+const PG_DATABASE = requiredEnv('SUPABASE_PG_DATABASE');
+const PG_USER = requiredEnv('SUPABASE_PG_USER');
+const PG_PASSWORD = requiredEnv('SUPABASE_PG_PASSWORD');
+
 // Supabase 数据库连接配置
 // Session mode (端口 5432) - 适合持久连接
 // 格式: postgres://postgres.{project-ref}:[PASSWORD]@aws-{n}-{region}.pooler.supabase.com:5432/postgres
@@ -21,11 +34,11 @@ import { Pool, PoolClient } from 'pg';
 // 4. 选择 "Session mode" 连接字符串
 // 5. 复制密码（如果忘记密码，可以重置）
 const pool = new Pool({
-  host: 'aws-1-us-east-2.pooler.supabase.com',
+  host: PG_HOST,
   port: 5432, // Session mode 端口
-  database: 'postgres',
-  user: 'postgres.plvjtbzwbxmajnkanhbe', // Session mode 使用 postgres.{project-ref} 格式
-  password: '0dYWcWASm1u9w43U', // ⚠️ 如果认证失败，请检查此密码是否正确
+  database: PG_DATABASE,
+  user: PG_USER, // Session mode 使用 postgres.{project-ref} 格式
+  password: PG_PASSWORD, // ⚠️ 如果认证失败，请检查此密码是否正确
   ssl: {
     rejectUnauthorized: false, // Supabase 需要 SSL
   },
