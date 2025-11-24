@@ -229,10 +229,7 @@ async function queryNotesWithPg(params: {
     
     // 缺失内容筛选
     if (showMissingContent) {
-      conditions.push(`(
-        (n."Content" IS NULL OR n."Content" = '') 
-        OR (n."XhsContent" IS NULL OR n."XhsContent" = '')
-      )`);
+      conditions.push(`(n."XhsNoteLink" IS NULL OR n."XhsNoteLink" = '')`);
     }
     
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
