@@ -200,8 +200,8 @@ export default function AiAnalysisPage() {
           pageSize: String(pageSize),
         });
 
-        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
-        const response = await fetch(`/api/notes?${params.toString()}`);
+        console.log(`请求第 ${page} 页数据:`, `/api/notes/ai-analysis?${params.toString()}`);
+        const response = await fetch(`/api/notes/ai-analysis?${params.toString()}`);
         
         if (!response.ok) {
           throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
@@ -302,8 +302,8 @@ export default function AiAnalysisPage() {
           pageSize: String(pageSize),
         });
 
-        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
-        const response = await fetch(`/api/notes?${params.toString()}`);
+        console.log(`请求第 ${page} 页数据:`, `/api/notes/ai-analysis?${params.toString()}`);
+        const response = await fetch(`/api/notes/ai-analysis?${params.toString()}`);
         
         if (!response.ok) {
           throw new Error(`API请求失败: ${response.status} ${response.statusText}`);

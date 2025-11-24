@@ -1,176 +1,99 @@
-import { NextResponse } from 'next/server';
+/**
+ * AI分析笔记查询接口
+ * GET /api/notes/ai-analysis
+ * 
+ * 用于AI分析页面（/dashboard/system/ai-analysis）
+ * 
+ * 查询参数：
+ * - page: 页码（默认1）
+ * - pageSize: 每页数量（默认20，最大100）
+ * - aiStatus: AI状态筛选（必需，如：'分析失败'、'无内容'）
+ */
 
-import {
-  fetchNextPendingNote,
-  processNoteAiAnalysis,
-  type NoteRecord,
-} from '@/lib/ai/noteAnalysis';
-import { log } from '@/lib/logger';
-import { getServiceSupabaseClient } from '@/lib/supabase/admin';
-import { getSystemConfig, CONFIG_KEYS } from '@/lib/systemConfig';
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerClient } from '@/lib/supabase/server';
 
-const MAX_CONCURRENT_ANALYSIS = 20; // 最大并发分析数量
-const BATCH_SIZE = 5; // 每次批量启动的任务数量
-const REQUEST_INTERVAL = 4000; // 请求之间的延时（毫秒）
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic'; // 禁用缓存，确保每次请求都执行
-
-// 创建带缓存控制的响应
-const createResponse = (data: any, status: number = 200) => {
-  return NextResponse.json(data, {
-    status,
-    headers: {
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
-    },
-  });
-};
-
-
-// 延时函数
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// 后台批量启动AI分析任务
-const startBatchAnalysis = async () => {
-  const supabase = getServiceSupabaseClient();
-  const startedNotes: string[] = [];
-
-  log.info('AI批量分析开始', { batchSize: BATCH_SIZE });
-
-  for (let i = 0; i < BATCH_SIZE; i++) {
-    try {
-      // 每次循环前检查当前"分析中"的数量
-      const { count } = await supabase
-        .from('qiangua_note_info')
-        .select('NoteId', { count: 'exact', head: true })
-        .eq('AiStatus', '分析中');
-
-      const currentCount = count ?? 0;
-
-      // 如果已达上限，停止启动新任务
-      if (currentCount >= MAX_CONCURRENT_ANALYSIS) {
-        log.warning('AI批量分析达到并发上限', {
-          currentCount,
-          maxConcurrent: MAX_CONCURRENT_ANALYSIS,
-          iteration: i + 1,
-        });
-        break;
-      }
-
-      // 获取下一个待分析笔记
-      const note = await fetchNextPendingNote(supabase);
-      
-      if (!note) {
-        log.info('AI批量分析无待分析笔记', { iteration: i + 1 });
-        break;
-      }
-
-      // 异步启动分析任务（不等待完成）
-      processNoteAiAnalysis(note).catch((error) => {
-        log.error('AI分析任务执行失败', { noteId: note.NoteId }, error);
-      });
-
-      startedNotes.push(note.NoteId);
-      log.info('AI分析任务已启动', {
-        noteId: note.NoteId,
-        iteration: i + 1,
-        totalStarted: startedNotes.length,
-      });
-
-      // 如果不是最后一次循环，延时1秒
-      if (i < BATCH_SIZE - 1) {
-        await sleep(REQUEST_INTERVAL);
-      }
-    } catch (error: any) {
-      log.error('批量启动任务出错', { iteration: i + 1 }, error);
-      // 出错后继续下一次循环
-    }
-  }
-
-  log.info('AI批量分析完成', {
-    totalStarted: startedNotes.length,
-    noteIds: startedNotes,
-  });
-};
-
-export async function GET() {
-  const supabase = getServiceSupabaseClient();
-
+export async function GET(request: NextRequest) {
   try {
-    // 检查AI分析总开关
-    const aiEnabled = await getSystemConfig(CONFIG_KEYS.AI_ANALYSIS_ENABLED);
-    if (aiEnabled === 'false') {
-      return createResponse({
-        success: true,
-        data: null,
-        message: 'AI 分析已停止',
-      });
-    }
+    // 获取查询参数
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
+    const aiStatus = searchParams.get('aiStatus');
 
-    // 检查当前分析中的数量
-    const {
-      data: inProgress,
-      error: inProgressError,
-      count: inProgressCount,
-    } = await supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact' })
-      .eq('AiStatus', '分析中');
-
-    if (inProgressError) {
-      throw new Error(
-        `检查分析中笔记失败: ${inProgressError.message ?? '未知错误'}`,
+    // 验证必需参数
+    if (!aiStatus) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'aiStatus is required',
+        },
+        { status: 400 }
       );
     }
 
-    const currentInProgressCount = inProgressCount ?? (inProgress?.length ?? 0);
-
-    if (currentInProgressCount >= MAX_CONCURRENT_ANALYSIS) {
-      return createResponse({
-        success: true,
-        data: null,
-        message: `已达到最大并发分析数量 (${MAX_CONCURRENT_ANALYSIS})，跳过本次任务`,
-      });
+    // 验证分页参数
+    if (page < 1 || pageSize < 1 || pageSize > 100) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid pagination parameters',
+        },
+        { status: 400 }
+      );
     }
 
-    // 检查是否有待分析笔记
-    const firstNote = await fetchNextPendingNote(supabase);
-    if (!firstNote) {
-      return createResponse({
-        success: true,
-        data: null,
-        message: '暂无待分析笔记',
-      });
+    // 创建 Supabase 客户端
+    const supabase = createServerClient(request);
+
+    // 构建查询
+    let query = supabase
+      .from('qiangua_note_info')
+      .select(
+        'NoteId, DateCode, Title, Content, CoverImage, NoteType, IsBusiness, IsAdNote, PublishTime, PubDate, LikedCount, CollectedCount, CommentsCount, ViewCount, ShareCount, BloggerId, BloggerNickName, BloggerProp, BigAvatar, SmallAvatar, BrandId, BrandIdKey, BrandName, VideoDuration, CurrentUserIsFavorite, Fans, AdPrice, OfficialVerified, XhsContent, XhsNoteLink, AiContentType, AiRelatedProducts, AiSummary, AiStatus, AiErr',
+        { count: 'exact' }
+      )
+      .eq('AiStatus', aiStatus);
+
+    // 应用排序（默认按发布时间降序）
+    query = query.order('PublishTime', { ascending: false, nullsFirst: false });
+
+    // 应用分页
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    query = query.range(from, to);
+
+    // 执行查询
+    const { data, error, count } = await query;
+
+    if (error) {
+      console.error('Error fetching AI analysis notes:', error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message || 'Failed to fetch notes',
+        },
+        { status: 500 }
+      );
     }
 
-    // 在后台异步启动批量分析（不等待完成）
-    startBatchAnalysis().catch((error) => {
-      log.error('批量启动AI分析任务失败', {}, error);
-    });
-
-    // 立即返回成功响应
-    return createResponse({
+    return NextResponse.json({
       success: true,
       data: {
-        message: `批量 AI 分析任务已启动，将在后台处理最多 ${BATCH_SIZE} 个笔记`,
-        maxBatchSize: BATCH_SIZE,
-        currentInProgress: currentInProgressCount,
-        maxConcurrent: MAX_CONCURRENT_ANALYSIS,
+        list: data || [],
+        total: count || 0,
+        page,
+        pageSize,
       },
     });
   } catch (error: any) {
-    log.error('AI批量分析API调用失败', {}, error);
-
-    return createResponse(
+    console.error('Error in AI analysis notes API:', error);
+    return NextResponse.json(
       {
         success: false,
-        error: error?.message ?? 'AI 分析失败',
+        error: error.message || 'Internal server error',
       },
-      500,
+      { status: 500 }
     );
   }
 }
-
-

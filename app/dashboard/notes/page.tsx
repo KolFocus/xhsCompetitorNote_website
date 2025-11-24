@@ -279,7 +279,7 @@ export default function NotesPage() {
     setLoading(true);
     try {
       const params = buildNotesQueryParams(currentPage, pageSize);
-      const response = await fetch(`/api/notes?${params.toString()}`);
+      const response = await fetch(`/api/notes/list?${params.toString()}`);
       const data: NotesResponse = await response.json();
 
       if (data.success) {
@@ -305,7 +305,7 @@ export default function NotesPage() {
 
     while (true) {
       const params = buildNotesQueryParams(currentPage, maxExportPageSize);
-      const response = await fetch(`/api/notes?${params.toString()}`);
+      const response = await fetch(`/api/notes/list?${params.toString()}`);
       const data: NotesResponse = await response.json();
 
       if (!data.success) {
