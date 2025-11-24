@@ -149,7 +149,7 @@ async function queryNotesWithPg(params: {
           FROM qiangua_note_tag nt
           INNER JOIN qiangua_tag t ON nt."TagId" = t."TagId"
           WHERE nt."NoteId" = n."NoteId" 
-            AND t."TagSetId" = $${paramIndex}
+            AND t."TagSetId" = $${paramIndex}::uuid
         )
       `);
       queryParams.push(tagSetId);
@@ -164,7 +164,7 @@ async function queryNotesWithPg(params: {
           SELECT 1 
           FROM qiangua_note_tag nt
           WHERE nt."NoteId" = n."NoteId" 
-            AND nt."TagId" = $${paramIndex}
+            AND nt."TagId" = $${paramIndex}::uuid
         )
       `);
       queryParams.push(tagFilter);
@@ -300,7 +300,7 @@ async function fetchNoteTags(tagSetId: string, noteIds: string[]): Promise<Recor
   const tagsSql = `
     SELECT "TagId", "TagName", "TagSetId"
     FROM qiangua_tag
-    WHERE "TagSetId" = $1
+    WHERE "TagSetId" = $1::uuid
   `;
   const tagsInSet = await queryPg(tagsSql, [tagSetId]);
   
@@ -313,7 +313,7 @@ async function fetchNoteTags(tagSetId: string, noteIds: string[]): Promise<Recor
       SELECT "NoteId", "TagId"
       FROM qiangua_note_tag
       WHERE "NoteId" = ANY($1::text[])
-        AND "TagId" = ANY($2::text[])
+        AND "TagId" = ANY($2::uuid[])
     `;
     const noteTagRelations = await queryPg(relationsSql, [noteIds, tagIds]);
     
