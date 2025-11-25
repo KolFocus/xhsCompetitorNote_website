@@ -172,5 +172,3 @@ export async function GET() {
         );
     }
 }
-
-
