@@ -369,7 +369,7 @@ export const executeAiAnalysis = async (note: NoteRecord) => {
       errorText = aiResponse.statusText;
     }
     throw new Error(
-      `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
+      `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}\nPayload: ${JSON.stringify(payload)}`.trim(),
     );
   }
 
@@ -379,7 +379,7 @@ export const executeAiAnalysis = async (note: NoteRecord) => {
     responseText = await aiResponse.text();
     responseBody = JSON.parse(responseText);
   } catch (error: any) {
-    throw new Error(`AI 接口响应解析失败: ${error.message}`);
+    throw new Error(`AI 接口响应解析失败: ${error.message}\nPayload: ${JSON.stringify(payload)}`);
   }
 
   const messageText = extractMessageText(responseBody);
