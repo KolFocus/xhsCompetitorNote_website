@@ -7,7 +7,7 @@
  * 查询参数：
  * - page: 页码（默认1）
  * - pageSize: 每页数量（默认20）
- * - brandId: 品牌ID（可选）
+ * - brandKey: 品牌筛选键（格式：BrandId#KF#BrandName，可选）
  * - bloggerId: 博主ID（可选）
  * - startDate: 开始日期（可选，格式：YYYY-MM-DD）
  * - endDate: 结束日期（可选，格式：YYYY-MM-DD）
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
-    const brandId = searchParams.get('brandId');
+    const brandKey = searchParams.get('brandKey');
     const bloggerId = searchParams.get('bloggerId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -54,8 +54,9 @@ export async function GET(request: NextRequest) {
       );
 
     // 应用过滤条件
-    if (brandId) {
-      query = query.eq('BrandId', brandId);
+    if (brandKey) {
+      const [brandId, brandName] = brandKey.split('#KF#');
+      query = query.eq('BrandId', brandId).eq('BrandName', brandName);
     }
     if (bloggerId) {
       query = query.eq('BloggerId', bloggerId);

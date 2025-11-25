@@ -77,21 +77,26 @@ export async function GET(
       latestNoteTime = sortedTimes[sortedTimes.length - 1];
     }
 
-    // 获取品牌列表
+    // 获取品牌列表（不去重）
     const { data: brandsData } = await supabase
       .from('qiangua_report_note_rel')
       .select('qiangua_note_info(BrandId, BrandName)')
       .eq('ReportId', reportId)
       .not('qiangua_note_info.BrandId', 'is', null);
 
-    const brandsMap = new Map();
+    const brands: Array<{ brandId: string; brandName: string }> = [];
+    const brandSet = new Set<string>(); // 用于去重相同的 BrandId+BrandName 组合
     brandsData?.forEach((item: any) => {
       const brand = item.qiangua_note_info;
       if (brand && brand.BrandId) {
-        brandsMap.set(brand.BrandId, {
-          brandId: brand.BrandId,
-          brandName: brand.BrandName,
-        });
+        const brandKey = `${brand.BrandId}#KF#${brand.BrandName}`;
+        if (!brandSet.has(brandKey)) {
+          brandSet.add(brandKey);
+          brands.push({
+            brandId: brand.BrandId,
+            brandName: brand.BrandName,
+          });
+        }
       }
     });
 
@@ -106,7 +111,7 @@ export async function GET(
         ignoredNotesCount: ignoredCount || 0,
         earliestNoteTime,
         latestNoteTime,
-        brands: Array.from(brandsMap.values()),
+        brands: brands,
       },
     });
   } catch (error: any) {

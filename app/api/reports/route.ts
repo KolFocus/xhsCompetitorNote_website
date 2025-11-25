@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { queryPg } from '@/lib/postgres';
 
 // 获取报告列表
 export async function GET(request: NextRequest) {
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { reportName, brandIds, startDate, endDate } = body;
+    const { reportName, brandKeys, startDate, endDate } = body;
 
     // 验证参数
     if (!reportName || typeof reportName !== 'string') {
@@ -132,33 +133,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!brandIds || !Array.isArray(brandIds) || brandIds.length === 0) {
+    if (!brandKeys || !Array.isArray(brandKeys) || brandKeys.length === 0) {
       return NextResponse.json(
         { success: false, error: '至少需要选择1个品牌' },
         { status: 400 }
       );
     }
 
-    // 查询符合条件的笔记
-    let notesQuery = supabase
-      .from('qiangua_note_info')
-      .select('NoteId')
-      .in('BrandId', brandIds);
+    // 解析 brandKeys 为 (BrandId, BrandName) 对
+    const brandPairs = brandKeys.map((key: string) => {
+      const [brandId, brandName] = key.split('#KF#');
+      return { brandId, brandName };
+    });
+
+    // 构建品牌筛选条件（OR条件）
+    const brandConditions = brandPairs.map((_: any, index: number) => {
+      const baseIdx = index * 2 + 1;
+      return `("BrandId" = $${baseIdx} AND "BrandName" = $${baseIdx + 1})`;
+    }).join(' OR ');
+
+    const brandParams = brandPairs.flatMap((pair: any) => [pair.brandId, pair.brandName]);
+
+    // 构建完整SQL查询
+    const conditions = [brandConditions];
+    const queryParams = [...brandParams];
+    let paramIndex = brandParams.length + 1;
 
     if (startDate) {
-      notesQuery = notesQuery.gte('PubDate', startDate);
+      conditions.push(`"PubDate" >= $${paramIndex}::date`);
+      queryParams.push(startDate);
+      paramIndex++;
     }
     if (endDate) {
-      notesQuery = notesQuery.lte('PubDate', endDate);
+      conditions.push(`"PubDate" <= $${paramIndex}::date`);
+      queryParams.push(endDate);
+      paramIndex++;
     }
 
-    const { data: notes, error: notesError } = await notesQuery;
+    const sql = `
+      SELECT "NoteId"
+      FROM qiangua_note_info
+      WHERE ${conditions.join(' AND ')}
+    `;
 
-    if (notesError) {
-      console.error('Error fetching notes:', notesError);
+    const notes = await queryPg(sql, queryParams);
+
+    if (!notes || notes.length === 0) {
       return NextResponse.json(
-        { success: false, error: notesError.message },
-        { status: 500 }
+        { success: false, error: '没有符合条件的笔记' },
+        { status: 400 }
       );
     }
 

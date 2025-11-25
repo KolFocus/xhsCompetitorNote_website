@@ -199,7 +199,7 @@ export default function NotesPage() {
     const loadFilters = async () => {
       try {
         const [brandsRes, bloggersRes] = await Promise.all([
-          fetch('/api/brands'),
+          fetch('/api/allBrands'),
           fetch('/api/bloggers'),
         ]);
 
@@ -257,7 +257,7 @@ export default function NotesPage() {
     });
 
     if (selectedBrand) {
-      params.append('brandId', selectedBrand);
+      params.append('brandKey', selectedBrand);
     }
     if (selectedBlogger) {
       params.append('bloggerId', selectedBlogger);
@@ -1052,11 +1052,14 @@ export default function NotesPage() {
                 return label.toLowerCase().includes(input.toLowerCase());
               }}
             >
-              {brands.map((brand) => (
-                <Option key={brand.BrandId} value={brand.BrandId} label={brand.BrandName}>
-                  {brand.BrandName}
-                </Option>
-              ))}
+              {brands.map((brand) => {
+                const brandKey = `${brand.BrandId}#KF#${brand.BrandName}`;
+                return (
+                  <Option key={brandKey} value={brandKey} label={brand.BrandName}>
+                    {brand.BrandName}
+                  </Option>
+                );
+              })}
             </Select>
           </Col>
 

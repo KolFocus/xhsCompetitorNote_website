@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { queryPg } from '@/lib/postgres';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,43 +22,59 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { brandIds, startDate, endDate } = body;
+    const { brandKeys, startDate, endDate } = body;
 
     // 验证参数
-    if (!brandIds || !Array.isArray(brandIds) || brandIds.length === 0) {
+    if (!brandKeys || !Array.isArray(brandKeys) || brandKeys.length === 0) {
       return NextResponse.json({
         success: true,
         data: { totalCount: 0 },
       });
     }
 
-    // 构建查询
-    let query = supabase
-      .from('qiangua_note_info')
-      .select('NoteId', { count: 'exact', head: true })
-      .in('BrandId', brandIds);
+    // 解析 brandKeys 为 (BrandId, BrandName) 对
+    const brandPairs = brandKeys.map((key: string) => {
+      const [brandId, brandName] = key.split('#KF#');
+      return { brandId, brandName };
+    });
+
+    // 构建品牌筛选条件（OR条件）
+    const brandConditions = brandPairs.map((_: any, index: number) => {
+      const baseIdx = index * 2 + 1;
+      return `("BrandId" = $${baseIdx} AND "BrandName" = $${baseIdx + 1})`;
+    }).join(' OR ');
+
+    const brandParams = brandPairs.flatMap((pair: any) => [pair.brandId, pair.brandName]);
+
+    // 构建完整SQL查询
+    const conditions = [brandConditions];
+    const queryParams = [...brandParams];
+    let paramIndex = brandParams.length + 1;
 
     if (startDate) {
-      query = query.gte('PubDate', startDate);
+      conditions.push(`"PubDate" >= $${paramIndex}::date`);
+      queryParams.push(startDate);
+      paramIndex++;
     }
     if (endDate) {
-      query = query.lte('PubDate', endDate);
+      conditions.push(`"PubDate" <= $${paramIndex}::date`);
+      queryParams.push(endDate);
+      paramIndex++;
     }
 
-    const { count, error } = await query;
+    const sql = `
+      SELECT COUNT(*) as count
+      FROM qiangua_note_info
+      WHERE ${conditions.join(' AND ')}
+    `;
 
-    if (error) {
-      console.error('Error calculating notes:', error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
-    }
+    const result = await queryPg(sql, queryParams);
+    const count = result && result.length > 0 ? parseInt(result[0].count) : 0;
 
     return NextResponse.json({
       success: true,
       data: {
-        totalCount: count || 0,
+        totalCount: count,
       },
     });
   } catch (error: any) {

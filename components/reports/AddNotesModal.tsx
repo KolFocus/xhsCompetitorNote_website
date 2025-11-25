@@ -54,7 +54,7 @@ export default function AddNotesModal({
   const loadBrands = async () => {
     try {
       setBrandsLoading(true);
-      const response = await fetch('/api/brands');
+      const response = await fetch('/api/allBrands');
       const data = await response.json();
       if (data.success) {
         setBrands(data.data || []);
@@ -81,7 +81,7 @@ export default function AddNotesModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandIds,
+          brandKeys: brandIds,
           startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
           endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
         }),
@@ -140,7 +140,7 @@ export default function AddNotesModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandIds,
+          brandKeys: brandIds,
           startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
           endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
         }),
@@ -214,7 +214,7 @@ export default function AddNotesModal({
               (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
             }
             options={brands.map((brand) => ({
-              value: brand.BrandId,
+              value: `${brand.BrandId}#KF#${brand.BrandName}`,
               label: brand.BrandName,
             }))}
           />

@@ -284,7 +284,7 @@ export default function ReportsPage() {
         pageSize: String(pageSizeValue),
         status: activeTab,
       });
-      if (brandId) params.set('brandId', brandId);
+      if (brandId) params.set('brandKey', brandId);
       if (bloggerId) params.set('bloggerId', bloggerId);
       if (dateRange) {
         params.set('startDate', dateRange[0].format('YYYY-MM-DD'));
@@ -1176,11 +1176,14 @@ export default function ReportsPage() {
                   style={{ width: 150 }}
                   allowClear
                 >
-                  {reportDetail.brands.map((brand) => (
-                    <Option key={brand.brandId} value={brand.brandId}>
-                      {brand.brandName}
-                    </Option>
-                  ))}
+                  {reportDetail.brands.map((brand) => {
+                    const brandKey = `${brand.brandId}#KF#${brand.brandName}`;
+                    return (
+                      <Option key={brandKey} value={brandKey}>
+                        {brand.brandName}
+                      </Option>
+                    );
+                  })}
                 </Select>
               </Col>
               <Col>
@@ -1346,7 +1349,7 @@ export default function ReportsPage() {
           open={addNotesModalVisible}
           reportId={reportId!}
           reportName={reportDetail.reportName}
-          defaultBrandIds={reportDetail.brands.map((b) => b.brandId)}
+          defaultBrandIds={reportDetail.brands.map((b) => `${b.brandId}#KF#${b.brandName}`)}
           onCancel={() => setAddNotesModalVisible(false)}
           onSuccess={handleAddNotesSuccess}
         />

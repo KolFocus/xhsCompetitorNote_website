@@ -208,7 +208,7 @@ const NoteTaggingPage: React.FC = () => {
     try {
       const [reportsRes, brandsRes, bloggersRes] = await Promise.all([
         fetch('/api/reports'),
-        fetch('/api/brands'),
+        fetch('/api/allBrands'),
         fetch('/api/bloggers'),
       ]);
 
@@ -266,7 +266,7 @@ const NoteTaggingPage: React.FC = () => {
         params.set('reportId', selectedReportId);
       }
       if (selectedBrand) {
-        params.set('brandId', selectedBrand);
+        params.set('brandKey', selectedBrand);
       }
       if (selectedBlogger) {
         params.set('bloggerId', selectedBlogger);
@@ -853,11 +853,14 @@ const NoteTaggingPage: React.FC = () => {
                   return label.toLowerCase().includes(input.toLowerCase());
                 }}
               >
-                {brands.map((brand) => (
-                  <Option key={brand.BrandId} value={brand.BrandId} label={brand.BrandName}>
-                    {brand.BrandName}
-                  </Option>
-                ))}
+                {brands.map((brand) => {
+                  const brandKey = `${brand.BrandId}#KF#${brand.BrandName}`;
+                  return (
+                    <Option key={brandKey} value={brandKey} label={brand.BrandName}>
+                      {brand.BrandName}
+                    </Option>
+                  );
+                })}
               </Select>
             </Col>
 

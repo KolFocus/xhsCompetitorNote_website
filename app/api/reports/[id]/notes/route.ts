@@ -45,7 +45,7 @@ export async function GET(
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
     const status = searchParams.get('status') || 'active';
-    const brandId = searchParams.get('brandId');
+    const brandKey = searchParams.get('brandKey');
     const bloggerId = searchParams.get('bloggerId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -117,6 +117,13 @@ export async function GET(
       );
     }
 
+    // 解析 brandKey
+    let brandId: string | null = null;
+    let brandName: string | null = null;
+    if (brandKey) {
+      [brandId, brandName] = brandKey.split('#KF#');
+    }
+
     // 处理数据格式
     const notes = (data || [])
       .map((item: any) => {
@@ -125,6 +132,7 @@ export async function GET(
 
         // 应用筛选（在内存中，因为 Supabase 子查询限制）
         if (brandId && note.BrandId !== brandId) return null;
+        if (brandName && note.BrandName !== brandName) return null;
         if (bloggerId && note.BloggerId !== bloggerId) return null;
         if (startDate && note.PubDate < startDate) return null;
         if (endDate && note.PubDate > endDate) return null;

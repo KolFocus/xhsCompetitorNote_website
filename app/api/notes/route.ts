@@ -6,7 +6,7 @@
  * - page: 页码（默认1）
  * - pageSize: 每页数量（默认20）
  * - reportId: 报告ID（可选，如果提供则只返回该报告中的笔记）
- * - brandId: 品牌ID（可选）
+ * - brandKey: 品牌筛选键（格式：BrandId#KF#BrandName，可选）
  * - bloggerId: 博主ID（可选）
  * - startDate: 开始日期（可选，格式：YYYY-MM-DD）
  * - endDate: 结束日期（可选，格式：YYYY-MM-DD）
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
     const reportId = searchParams.get('reportId');
-    const brandId = searchParams.get('brandId');
+    const brandKey = searchParams.get('brandKey');
     const bloggerId = searchParams.get('bloggerId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
@@ -68,9 +68,9 @@ export async function GET(request: NextRequest) {
       tagFilter: tagFilter || null,
       reportId,
       userId: null, // 不考虑报告权限验证
-      page,
-      pageSize,
-      brandId,
+            page,
+            pageSize,
+      brandKey,
       bloggerId,
       startDate,
       endDate,
@@ -103,7 +103,7 @@ async function queryNotesWithPg(params: {
   userId?: string | null; // 用户ID（已废弃，保留以兼容，但不使用）
   page: number;
   pageSize: number;
-  brandId?: string | null;
+  brandKey?: string | null; // 格式：BrandId#KF#BrandName
   bloggerId?: string | null;
   startDate?: string | null;
   endDate?: string | null;
@@ -121,7 +121,7 @@ async function queryNotesWithPg(params: {
       userId,
       page,
       pageSize,
-      brandId,
+      brandKey,
       bloggerId,
       startDate,
       endDate,
@@ -189,9 +189,13 @@ async function queryNotesWithPg(params: {
     }
     
     // 其他过滤条件
-    if (brandId) {
+    if (brandKey) {
+      const [brandId, brandName] = brandKey.split('#KF#');
       conditions.push(`n."BrandId" = $${paramIndex}`);
       queryParams.push(brandId);
+      paramIndex++;
+      conditions.push(`n."BrandName" = $${paramIndex}`);
+      queryParams.push(brandName);
       paramIndex++;
     }
     
@@ -345,7 +349,7 @@ async function handleNotesQuery(params: {
   userId?: string | null;
   page: number;
   pageSize: number;
-  brandId?: string | null;
+  brandKey?: string | null; // 格式：BrandId#KF#BrandName
   bloggerId?: string | null;
   startDate?: string | null;
   endDate?: string | null;
@@ -362,7 +366,7 @@ async function handleNotesQuery(params: {
     userId,
     page,
     pageSize,
-    brandId,
+    brandKey,
     bloggerId,
     startDate,
     endDate,
@@ -381,7 +385,7 @@ async function handleNotesQuery(params: {
     userId,
     page,
     pageSize,
-    brandId,
+    brandKey,
     bloggerId,
     startDate,
     endDate,
