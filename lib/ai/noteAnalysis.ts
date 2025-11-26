@@ -422,27 +422,96 @@ export const updateAiAnalysisSuccess = async (
   }
 };
 
+// AI 错误类型常量
+export const AI_ERROR_TYPES = {
+  MEDIA_EXPIRED: 'MediaExpired',      // 媒体文件过期（不可重试）
+  CHANNEL_BLOCKED: 'ChannelBlocked',  // 渠道被封禁（可重试）
+  NO_CHANNEL: 'NoChannel',            // 无可用渠道（可重试）
+  PARSE_ERROR: 'ParseError',          // AI响应解析失败（不可重试）
+  NETWORK_ERROR: 'NetworkError',      // 网络/接口错误（可重试）
+  CONTENT_EMPTY: 'ContentEmpty',      // 内容为空（不可重试）
+  LOCK_CONFLICT: 'LockConflict',      // 锁定冲突（特殊处理）
+  UNKNOWN: 'Unknown',                 // 未知错误（可重试）
+} as const;
+
+// 可重试的错误类型列表
+const RETRYABLE_ERROR_TYPES: readonly string[] = [
+  AI_ERROR_TYPES.CHANNEL_BLOCKED,
+  AI_ERROR_TYPES.NO_CHANNEL,
+  AI_ERROR_TYPES.NETWORK_ERROR,
+  AI_ERROR_TYPES.UNKNOWN,
+];
+
 /**
- * 判断是否为可重试的错误
- * @param errorMessage 错误信息
+ * 根据错误消息分类错误类型
+ * @param errorMessage 错误消息
+ * @returns 错误类型
+ */
+export const classifyErrorType = (errorMessage: string): string => {
+  if (!errorMessage || typeof errorMessage !== 'string') {
+    return AI_ERROR_TYPES.UNKNOWN;
+  }
+
+  const message = errorMessage.toLowerCase();
+
+  // 媒体文件过期
+  if (message.includes('failed to download file')) {
+    return AI_ERROR_TYPES.MEDIA_EXPIRED;
+  }
+
+  // 渠道被封禁
+  if (message.includes('被封禁')) {
+    return AI_ERROR_TYPES.CHANNEL_BLOCKED;
+  }
+
+  // 无可用渠道
+  if (message.includes('无可用渠道')) {
+    return AI_ERROR_TYPES.NO_CHANNEL;
+  }
+
+  // 解析错误
+  if (message.includes('解析失败') || message.includes('ai 响应')) {
+    return AI_ERROR_TYPES.PARSE_ERROR;
+  }
+
+  // 网络错误
+  if (message.includes('接口返回错误') || message.includes('ai 接口')) {
+    return AI_ERROR_TYPES.NETWORK_ERROR;
+  }
+
+  // 内容为空
+  if (message.includes('内容为空')) {
+    return AI_ERROR_TYPES.CONTENT_EMPTY;
+  }
+
+  // 默认未知错误
+  return AI_ERROR_TYPES.UNKNOWN;
+};
+
+/**
+ * 判断错误类型是否可重试
+ * @param errorType 错误类型
  * @returns 是否可重试
  */
-const isRetryableError = (errorMessage: string): boolean => {
-  return errorMessage.includes('被封禁') || errorMessage.includes('无可用渠道');
+const isRetryableError = (errorType: string): boolean => {
+  return RETRYABLE_ERROR_TYPES.includes(errorType);
 };
 
 /**
  * 更新分析失败状态到数据库
+ * @param supabase Supabase客户端
  * @param noteId 笔记ID
  * @param errorMessage 错误信息
+ * @param errorType 错误类型
  */
 export const updateAiAnalysisFailure = async (
   supabase: SupabaseClient,
   noteId: string,
   errorMessage: string,
+  errorType: string,
 ) => {
   // 判断是否为可重试的错误
-  const canRetry = isRetryableError(errorMessage);
+  const canRetry = isRetryableError(errorType);
   
   await supabase
     .from('qiangua_note_info')
@@ -453,6 +522,7 @@ export const updateAiAnalysisFailure = async (
       AiRelatedProducts: null,
       AiJson: null,
       AiErr: errorMessage,
+      AiErrType: errorType,
     })
     .eq('NoteId', noteId);
 };
@@ -556,8 +626,12 @@ export const processNoteAiAnalysis = async (
       ? noteIdOrRecord 
       : noteIdOrRecord.NoteId;
     
-    const canRetry = isRetryableError(errorMessage);
-    await updateAiAnalysisFailure(supabase, noteId, errorMessage);
+    // 分类错误类型
+    const errorType = classifyErrorType(errorMessage);
+    const canRetry = isRetryableError(errorType);
+    
+    // 更新失败状态到数据库
+    await updateAiAnalysisFailure(supabase, noteId, errorMessage, errorType);
 
     const duration = Date.now() - startTime;
     
@@ -566,12 +640,14 @@ export const processNoteAiAnalysis = async (
       log.warning('AI分析失败(可重试)', {
         noteId,
         duration: `${duration}ms`,
+        errorType,
         willRetry: true,
       }, error);
     } else {
       log.error('AI分析失败(不可重试)', {
         noteId,
         duration: `${duration}ms`,
+        errorType,
         willRetry: false,
       }, error);
     }

@@ -8,6 +8,9 @@
  * - page: 页码（默认1）
  * - pageSize: 每页数量（默认20，最大100）
  * - aiStatus: AI状态筛选（必需，如：'分析失败'、'无内容'）
+ * - brandId: 品牌ID筛选（可选）
+ * - brandName: 品牌名称筛选（可选，配合brandId使用以精确匹配）
+ * - errType: 错误类型筛选（可选）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -20,6 +23,9 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10);
     const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
     const aiStatus = searchParams.get('aiStatus');
+    const brandId = searchParams.get('brandId');
+    const brandName = searchParams.get('brandName');
+    const errType = searchParams.get('errType');
 
     // 验证必需参数
     if (!aiStatus) {
@@ -50,10 +56,24 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('qiangua_note_info')
       .select(
-        'NoteId, DateCode, Title, Content, CoverImage, NoteType, IsBusiness, IsAdNote, PublishTime, PubDate, LikedCount, CollectedCount, CommentsCount, ViewCount, ShareCount, BloggerId, BloggerNickName, BloggerProp, BigAvatar, SmallAvatar, BrandId, BrandIdKey, BrandName, VideoDuration, CurrentUserIsFavorite, Fans, AdPrice, OfficialVerified, XhsContent, XhsNoteLink, AiContentType, AiRelatedProducts, AiSummary, AiStatus, AiErr',
+        'NoteId, DateCode, Title, Content, CoverImage, NoteType, IsBusiness, IsAdNote, PublishTime, PubDate, LikedCount, CollectedCount, CommentsCount, ViewCount, ShareCount, BloggerId, BloggerNickName, BloggerProp, BigAvatar, SmallAvatar, BrandId, BrandIdKey, BrandName, VideoDuration, CurrentUserIsFavorite, Fans, AdPrice, OfficialVerified, XhsContent, XhsNoteLink, AiContentType, AiRelatedProducts, AiSummary, AiStatus, AiErr, AiErrType',
         { count: 'exact' }
       )
       .eq('AiStatus', aiStatus);
+
+    // 应用品牌筛选（同时按 BrandId 和 BrandName 筛选，确保精确匹配）
+    if (brandId) {
+      query = query.eq('BrandId', brandId);
+      // 如果提供了 brandName，也按 brandName 筛选
+      if (brandName) {
+        query = query.eq('BrandName', brandName);
+      }
+    }
+
+    // 应用错误类型筛选
+    if (errType) {
+      query = query.eq('AiErrType', errType);
+    }
 
     // 应用排序（默认按发布时间降序）
     query = query.order('PublishTime', { ascending: false, nullsFirst: false });

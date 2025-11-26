@@ -16,6 +16,11 @@ import {
   Typography,
   Divider,
   Dropdown,
+  Table,
+  Tag,
+  Select,
+  Popconfirm,
+  Pagination,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -27,6 +32,8 @@ import {
   CloseCircleOutlined,
   MoreOutlined,
   RedoOutlined,
+  EyeOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import type { RadioChangeEvent } from 'antd';
 
@@ -52,9 +59,11 @@ interface FailedNote {
   Title: string;
   AiStatus: string;
   AiErr: string;
+  AiErrType: string | null;
   PublishTime: string;
   BloggerNickName: string;
   BrandName: string | null;
+  XhsNoteLink: string | null;
 }
 
 export default function AiAnalysisPage() {
@@ -65,6 +74,16 @@ export default function AiAnalysisPage() {
   const [exporting, setExporting] = useState(false);
   const [exportingNoContent, setExportingNoContent] = useState(false);
   const [countdown, setCountdown] = useState(60);
+  
+  // 失败列表弹窗相关状态
+  const [failedModalVisible, setFailedModalVisible] = useState(false);
+  const [failedNotes, setFailedNotes] = useState<FailedNote[]>([]);
+  const [loadingFailedNotes, setLoadingFailedNotes] = useState(false);
+  const [failedNotesPage, setFailedNotesPage] = useState(1);
+  const [failedNotesTotal, setFailedNotesTotal] = useState(0);
+  const [failedFilterBrand, setFailedFilterBrand] = useState<string>('');
+  const [failedFilterErrType, setFailedFilterErrType] = useState<string>('');
+  const [brandList, setBrandList] = useState<Array<{ BrandId: string; BrandName: string }>>([]);
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -247,6 +266,7 @@ export default function AiAnalysisPage() {
         博主: note.BloggerNickName || '',
         品牌: note.BrandName || '',
         发布时间: note.PublishTime || '',
+        错误类型: note.AiErrType || '',
         错误原因: note.AiErr || '',
       }));
 
@@ -275,6 +295,105 @@ export default function AiAnalysisPage() {
     } finally {
       setExporting(false);
       console.log('导出流程结束');
+    }
+  };
+
+  // 加载品牌列表
+  const loadBrandList = async () => {
+    try {
+      const response = await fetch('/api/allBrands');
+      const result = await response.json();
+      if (result.success) {
+        setBrandList(result.data || []);
+      }
+    } catch (error) {
+      console.error('加载品牌列表失败:', error);
+    }
+  };
+
+  // 加载失败列表
+  const loadFailedNotes = async (page: number = 1, brandFilter?: string, errTypeFilter?: string) => {
+    try {
+      setLoadingFailedNotes(true);
+      const params = new URLSearchParams({
+        aiStatus: '分析失败',
+        page: String(page),
+        pageSize: '20',
+      });
+
+      // 添加筛选条件
+      const brand = brandFilter !== undefined ? brandFilter : failedFilterBrand;
+      const errType = errTypeFilter !== undefined ? errTypeFilter : failedFilterErrType;
+      
+      if (brand && brand.includes('#KF#')) {
+        // 分割 BrandId#KF#BrandName
+        const [brandId, brandName] = brand.split('#KF#');
+        params.append('brandId', brandId);
+        params.append('brandName', brandName);
+      }
+      if (errType) {
+        params.append('errType', errType);
+      }
+
+      const response = await fetch(`/api/system/ai-analysis?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || '获取数据失败');
+      }
+
+      setFailedNotes(result.data.list || []);
+      setFailedNotesTotal(result.data.total || 0);
+      setFailedNotesPage(page);
+    } catch (error) {
+      console.error('加载失败列表失败:', error);
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      message.error(`加载失败: ${errorMsg}`);
+    } finally {
+      setLoadingFailedNotes(false);
+    }
+  };
+
+  // 打开失败列表弹窗
+  const handleViewFailedList = () => {
+    setFailedModalVisible(true);
+    setFailedFilterBrand('');
+    setFailedFilterErrType('');
+    loadBrandList();
+    loadFailedNotes(1, '', '');
+  };
+
+  // 筛选条件变化
+  const handleFilterChange = () => {
+    loadFailedNotes(1);
+  };
+
+  // 重置单条笔记状态
+  const handleResetSingleNote = async (noteId: string) => {
+    try {
+      const response = await fetch('/api/system/ai-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noteId }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        message.success('重置成功');
+        loadFailedNotes(failedNotesPage); // 重新加载当前页
+        loadStats(); // 更新统计数据
+      } else {
+        message.error(data.error || '重置失败');
+      }
+    } catch (error) {
+      console.error('重置失败:', error);
+      message.error('重置失败');
     }
   };
 
@@ -532,6 +651,11 @@ export default function AiAnalysisPage() {
                     menu={{
                       items: [
                         {
+                          key: 'view',
+                          label: '查看列表',
+                          icon: <EyeOutlined />,
+                        },
+                        {
                           key: 'reset',
                           label: '重置状态',
                           icon: <RedoOutlined />,
@@ -544,7 +668,9 @@ export default function AiAnalysisPage() {
                         },
                       ],
                       onClick: ({ key }) => {
-                        if (key === 'reset') {
+                        if (key === 'view') {
+                          handleViewFailedList();
+                        } else if (key === 'reset') {
                           handleReset('分析失败', '分析失败');
                         } else if (key === 'export') {
                           handleExport();
@@ -645,6 +771,233 @@ export default function AiAnalysisPage() {
           </Space>
         </Card>
       </Spin>
+
+      {/* 失败列表弹窗 */}
+      <Modal
+        title="AI分析失败列表"
+        open={failedModalVisible}
+        onCancel={() => setFailedModalVisible(false)}
+        footer={null}
+        width={1400}
+        destroyOnClose
+        styles={{
+          body: {
+            height: '600px',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 0,
+          },
+        }}
+      >
+        {/* 筛选器 */}
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <Space>
+            <Text>品牌：</Text>
+          <Select
+            style={{ width: 200 }}
+            placeholder="请选择品牌"
+            allowClear
+            showSearch
+            filterOption={(input, option) => {
+              const label = option?.label as string;
+              return label.toLowerCase().includes(input.toLowerCase());
+            }}
+            value={failedFilterBrand || undefined}
+            onChange={(value) => {
+              setFailedFilterBrand(value || '');
+              loadFailedNotes(1, value || '', undefined);
+            }}
+            options={[
+              ...brandList.map((brand) => ({
+                label: brand.BrandName,
+                value: `${brand.BrandId}#KF#${brand.BrandName}`,
+              })),
+            ]}
+          />
+            <Text>错误类型：</Text>
+            <Select
+              style={{ width: 150 }}
+              placeholder="请选择错误类型"
+              allowClear
+              value={failedFilterErrType || undefined}
+              onChange={(value) => {
+                setFailedFilterErrType(value || '');
+                loadFailedNotes(1, undefined, value || '');
+              }}
+              options={[
+                { label: '媒体过期', value: 'MediaExpired' },
+                { label: '渠道封禁', value: 'ChannelBlocked' },
+                { label: '无可用渠道', value: 'NoChannel' },
+                { label: '解析错误', value: 'ParseError' },
+                { label: '网络错误', value: 'NetworkError' },
+                { label: '内容为空', value: 'ContentEmpty' },
+                { label: '未知错误', value: 'Unknown' },
+              ]}
+            />
+          </Space>
+        </div>
+
+        {/* 表格内容区域 */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 24px', minHeight: 0 }}>
+          <Table
+            dataSource={failedNotes}
+            loading={loadingFailedNotes}
+            rowKey="NoteId"
+            pagination={false}
+            scroll={{ x: 1200 }}
+            size="small"
+            sticky={{ offsetHeader: 0 }}
+          >
+            <Table.Column
+              title="笔记标题"
+              dataIndex="Title"
+              key="Title"
+              width={200}
+              ellipsis={{ showTitle: true }}
+              render={(text, record: FailedNote) => {
+                if (!text) return '-';
+                if (record.XhsNoteLink) {
+                  return (
+                    <a
+                      href={record.XhsNoteLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <LinkOutlined />
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {text}
+                      </span>
+                    </a>
+                  );
+                }
+                return text;
+              }}
+            />
+            <Table.Column
+              title="博主"
+              dataIndex="BloggerNickName"
+              key="BloggerNickName"
+              width={120}
+              ellipsis={{ showTitle: true }}
+              render={(text) => text || '-'}
+            />
+            <Table.Column
+              title="品牌"
+              dataIndex="BrandName"
+              key="BrandName"
+              width={120}
+              ellipsis={{ showTitle: true }}
+              render={(text) => text || '-'}
+            />
+            <Table.Column
+              title="发布时间"
+              dataIndex="PublishTime"
+              key="PublishTime"
+              width={150}
+              render={(text) => {
+                if (!text) return '-';
+                return new Date(text).toLocaleString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+              }}
+            />
+            <Table.Column
+              title="错误类型"
+              dataIndex="AiErrType"
+              key="AiErrType"
+              width={120}
+              render={(errType) => {
+                if (!errType) return '-';
+                
+                // 根据错误类型显示不同颜色的标签
+                const colorMap: Record<string, string> = {
+                  MediaExpired: 'orange',
+                  ChannelBlocked: 'red',
+                  NoChannel: 'volcano',
+                  ParseError: 'magenta',
+                  NetworkError: 'blue',
+                  ContentEmpty: 'default',
+                  Unknown: 'default',
+                };
+                
+                const labelMap: Record<string, string> = {
+                  MediaExpired: '媒体过期',
+                  ChannelBlocked: '渠道封禁',
+                  NoChannel: '无可用渠道',
+                  ParseError: '解析错误',
+                  NetworkError: '网络错误',
+                  ContentEmpty: '内容为空',
+                  Unknown: '未知错误',
+                };
+                
+                return (
+                  <Tag color={colorMap[errType] || 'default'}>
+                    {labelMap[errType] || errType}
+                  </Tag>
+                );
+              }}
+            />
+            <Table.Column
+              title="错误信息"
+              dataIndex="AiErr"
+              key="AiErr"
+              width={250}
+              ellipsis={{ showTitle: true }}
+              render={(text) => (
+                <Text type="danger" ellipsis={{ tooltip: text }}>
+                  {text || '-'}
+                </Text>
+              )}
+            />
+            <Table.Column
+              title="操作"
+              key="action"
+              width={100}
+              fixed="right"
+              render={(_, record: FailedNote) => (
+                <Popconfirm
+                  title="确认重置状态？"
+                  description='将此笔记重置为"待分析"状态'
+                  onConfirm={() => handleResetSingleNote(record.NoteId)}
+                  okText="确认"
+                  cancelText="取消"
+                >
+                  <Button type="link" size="small" icon={<RedoOutlined />}>
+                    重置
+                  </Button>
+                </Popconfirm>
+              )}
+            />
+          </Table>
+        </div>
+
+        {/* 固定在底部的分页 */}
+        <div
+          style={{
+            padding: '12px 24px',
+            borderTop: '1px solid #f0f0f0',
+            background: '#fff',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            flexShrink: 0,
+          }}
+        >
+          <Pagination
+            current={failedNotesPage}
+            pageSize={20}
+            total={failedNotesTotal}
+            showSizeChanger={false}
+            showTotal={(total) => `共 ${total} 条记录`}
+            onChange={(page) => loadFailedNotes(page)}
+          />
+        </div>
+      </Modal>
     </div>
   );
 }
