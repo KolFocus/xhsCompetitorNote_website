@@ -791,7 +791,7 @@ export default function AiAnalysisPage() {
         }}
       >
         {/* 筛选器 */}
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #f0f0f0', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space>
             <Text>品牌：</Text>
           <Select
@@ -836,6 +836,13 @@ export default function AiAnalysisPage() {
               ]}
             />
           </Space>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => loadFailedNotes(failedNotesPage)}
+            loading={loadingFailedNotes}
+          >
+            刷新列表
+          </Button>
         </div>
 
         {/* 表格内容区域 */}
