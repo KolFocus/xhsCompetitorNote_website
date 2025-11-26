@@ -64,6 +64,7 @@ interface FailedNote {
   BloggerNickName: string;
   BrandName: string | null;
   XhsNoteLink: string | null;
+  XhsUserId: string | null;
 }
 
 export default function AiAnalysisPage() {
@@ -863,7 +864,7 @@ export default function AiAnalysisPage() {
               width={200}
               ellipsis={{ showTitle: true }}
               render={(text, record: FailedNote) => {
-                if (!text) return '-';
+                // 如果有笔记链接，显示为链接
                 if (record.XhsNoteLink) {
                   return (
                     <a
@@ -874,12 +875,13 @@ export default function AiAnalysisPage() {
                     >
                       <LinkOutlined />
                       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {text}
+                        {text || '查看笔记'}
                       </span>
                     </a>
                   );
                 }
-                return text;
+                // 没有链接时，显示标题或 '-'
+                return text || '-';
               }}
             />
             <Table.Column
@@ -888,7 +890,25 @@ export default function AiAnalysisPage() {
               key="BloggerNickName"
               width={120}
               ellipsis={{ showTitle: true }}
-              render={(text) => text || '-'}
+              render={(text, record: FailedNote) => {
+                // 如果有用户ID，显示为链接
+                if (record.XhsUserId) {
+                  return (
+                    <a
+                      href={`https://www.xiaohongshu.com/user/profile/${record.XhsUserId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {text || '查看主页'}
+                      </span>
+                    </a>
+                  );
+                }
+                // 没有用户ID时，显示昵称或 '-'
+                return text || '-';
+              }}
             />
             <Table.Column
               title="品牌"
