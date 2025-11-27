@@ -18,6 +18,17 @@ export const getAiModel = async (): Promise<string> => {
   return model || AI_MODEL_DEFAULT;
 };
 
+/**
+ * 获取当前AI提供商配置
+ */
+export const getAiProvider = async (): Promise<'chatai' | 'openrouter'> => {
+  const provider = await getSystemConfig(CONFIG_KEYS.AI_PROVIDER);
+  if (provider === 'openrouter') {
+    return 'openrouter';
+  }
+  return 'chatai'; // 默认使用 chatai
+};
+
 export interface NoteRecord extends Record<string, any> {
   NoteId: string;
   XhsNoteId?: string | null;
@@ -224,6 +235,7 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
 };
 
 /**
+ * @deprecated 已移至 providers/chatai.ts，保留用于向后兼容
  * 构建AI请求的payload
  */
 export const buildAiRequestPayload = async (prompt: string, mediaUrls: string[]) => {
@@ -258,6 +270,7 @@ export const buildAiRequestPayload = async (prompt: string, mediaUrls: string[])
 };
 
 /**
+ * @deprecated 已移至 providers/chatai.ts，保留用于向后兼容
  * 从AI响应中提取文本内容
  */
 export const extractMessageText = (responseBody: any): string => {
@@ -343,65 +356,53 @@ const lockNoteForAnalysis = async (
 };
 
 /**
- * 执行AI分析的核心逻辑
+ * 执行AI分析的核心逻辑（根据提供商自动选择实现）
  * @param note 笔记记录
- * @returns 分析结果和响应文本
+ * @returns 分析结果、响应文本和使用的提供商
  */
 export const executeAiAnalysis = async (note: NoteRecord) => {
-  const mediaUrls = collectMediaUrls(note);
-  const prompt = buildNoteAnalysisPrompt(note);
-  const payload = await buildAiRequestPayload(prompt, mediaUrls);
+  // 动态导入提供商实现，避免循环依赖
+  const { executeChatAiAnalysis } = await import('./providers/chatai');
+  const { executeOpenRouterAnalysis } = await import('./providers/openrouter');
 
-  const aiResponse = await fetch(AI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${AI_API_TOKEN}`,
-    },
-    body: JSON.stringify(payload),
-  });
+  // 获取配置
+  const provider = await getAiProvider();
+  const model = await getAiModel();
 
-  if (!aiResponse.ok) {
-    let errorText: string | null = null;
-    try {
-      errorText = await aiResponse.text();
-    } catch {
-      errorText = aiResponse.statusText;
-    }
-    throw new Error(
-      `AI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}\nPayload: ${JSON.stringify(payload)}`.trim(),
-    );
+  console.log(`AI分析: 提供商=${provider}, 模型=${model}`);
+
+  // 根据提供商调用不同的实现
+  let result: {
+    aiResult: AiAnalysisResult;
+    responseText: string;
+  };
+
+  if (provider === 'openrouter') {
+    result = await executeOpenRouterAnalysis(note, model);
+  } else {
+    result = await executeChatAiAnalysis(note, model);
   }
-
-  let responseBody: any;
-  let responseText: string;
-  try {
-    responseText = await aiResponse.text();
-    responseBody = JSON.parse(responseText);
-  } catch (error: any) {
-    throw new Error(`AI 接口响应解析失败: ${error.message}\nPayload: ${JSON.stringify(payload)}`);
-  }
-
-  const messageText = extractMessageText(responseBody);
-  const aiResult = parseAiResponseContent(messageText);
 
   return {
-    aiResult,
-    responseText,
+    ...result,
+    provider, // 返回使用的提供商
   };
 };
 
 /**
  * 更新分析成功状态到数据库
+ * @param supabase Supabase客户端
  * @param noteId 笔记ID
  * @param aiResult AI分析结果
  * @param responseText AI响应的原始JSON文本
+ * @param provider AI提供商
  */
 export const updateAiAnalysisSuccess = async (
   supabase: SupabaseClient,
   noteId: string,
   aiResult: AiAnalysisResult,
   responseText: string,
+  provider: string,
 ) => {
   const { error } = await supabase
     .from('qiangua_note_info')
@@ -411,6 +412,7 @@ export const updateAiAnalysisSuccess = async (
       AiContentType: aiResult.contentType,
       AiRelatedProducts: aiResult.relatedProducts,
       AiJson: responseText,
+      AiProvider: provider, // 记录使用的提供商
       AiErr: null,
     })
     .eq('NoteId', noteId);
@@ -600,14 +602,16 @@ export const processNoteAiAnalysis = async (
     }
 
     // 2. 执行AI分析
-    const { aiResult, responseText } = await executeAiAnalysis(note);
+    const { aiResult, responseText, provider } = await executeAiAnalysis(note);
 
     // 3. 更新成功状态
-    await updateAiAnalysisSuccess(supabase, note.NoteId, aiResult, responseText);
+    await updateAiAnalysisSuccess(supabase, note.NoteId, aiResult, responseText, provider);
 
     const duration = Date.now() - startTime;
     log.info('AI分析成功', {
       noteId: note.NoteId,
+      provider, // 记录提供商
+      model: await getAiModel(), // 记录模型
       duration: `${duration}ms`,
       contentType: aiResult.contentType,
     });
@@ -635,10 +639,16 @@ export const processNoteAiAnalysis = async (
 
     const duration = Date.now() - startTime;
     
+    // 获取当前配置用于日志记录
+    const provider = await getAiProvider();
+    const model = await getAiModel();
+    
     // 根据是否可重试记录不同级别的日志
     if (canRetry) {
       log.warning('AI分析失败(可重试)', {
         noteId,
+        provider, // 记录提供商
+        model,    // 记录模型
         duration: `${duration}ms`,
         errorType,
         willRetry: true,
@@ -646,6 +656,8 @@ export const processNoteAiAnalysis = async (
     } else {
       log.error('AI分析失败(不可重试)', {
         noteId,
+        provider, // 记录提供商
+        model,    // 记录模型
         duration: `${duration}ms`,
         errorType,
         willRetry: false,

@@ -21,7 +21,9 @@ export async function GET() {
     const aiConfigs = configs.filter(
       (config) =>
         config.config_key === CONFIG_KEYS.AI_MODEL ||
-        config.config_key === CONFIG_KEYS.AI_ANALYSIS_ENABLED,
+        config.config_key === CONFIG_KEYS.AI_ANALYSIS_ENABLED ||
+        config.config_key === CONFIG_KEYS.AI_PROVIDER ||
+        config.config_key === CONFIG_KEYS.OPENROUTER_API_KEY,
     );
 
     return NextResponse.json({
@@ -60,7 +62,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 验证是否为允许的配置键
-    const allowedKeys = [CONFIG_KEYS.AI_MODEL, CONFIG_KEYS.AI_ANALYSIS_ENABLED];
+    const allowedKeys = [
+      CONFIG_KEYS.AI_MODEL,
+      CONFIG_KEYS.AI_ANALYSIS_ENABLED,
+      CONFIG_KEYS.AI_PROVIDER,
+      CONFIG_KEYS.OPENROUTER_API_KEY,
+    ];
     if (!allowedKeys.includes(config_key)) {
       return NextResponse.json(
         {
@@ -98,6 +105,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 验证 AI 提供商值
+    if (config_key === CONFIG_KEYS.AI_PROVIDER) {
+      const allowedProviders = ['chatai', 'openrouter'];
+      if (!allowedProviders.includes(config_value)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: '不支持的AI提供商',
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    // 验证 OpenRouter API Key 格式
+    if (config_key === CONFIG_KEYS.OPENROUTER_API_KEY) {
+      // 允许空值（用于清空配置）
+      if (config_value && !config_value.startsWith('sk-or-v1-')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'OpenRouter API Key 格式不正确，应以 sk-or-v1- 开头',
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // 更新配置
     const success = await updateSystemConfig(config_key, config_value);
 
@@ -105,9 +140,14 @@ export async function POST(request: NextRequest) {
       throw new Error('更新配置失败');
     }
 
+    // 记录日志（API Key 只记录前缀，保护安全）
+    const logValue = config_key === CONFIG_KEYS.OPENROUTER_API_KEY && config_value
+      ? `${config_value.substring(0, 15)}...`
+      : config_value;
+    
     log.info('AI配置已更新', {
       config_key,
-      config_value,
+      config_value: logValue,
     });
 
     return NextResponse.json({

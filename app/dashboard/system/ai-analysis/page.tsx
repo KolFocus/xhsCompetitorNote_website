@@ -21,6 +21,7 @@ import {
   Select,
   Popconfirm,
   Pagination,
+  Input,
 } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -34,6 +35,7 @@ import {
   RedoOutlined,
   EyeOutlined,
   LinkOutlined,
+  SaveOutlined,
 } from '@ant-design/icons';
 import type { RadioChangeEvent } from 'antd';
 
@@ -71,6 +73,8 @@ export default function AiAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<AiStats | null>(null);
   const [aiModel, setAiModel] = useState<string>('gemini-2.5-flash');
+  const [aiProvider, setAiProvider] = useState<string>('chatai'); // AI提供商
+  const [openrouterApiKey, setOpenrouterApiKey] = useState<string>(''); // OpenRouter API Key
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   const [exporting, setExporting] = useState(false);
   const [exportingNoContent, setExportingNoContent] = useState(false);
@@ -118,6 +122,16 @@ export default function AiAnalysisPage() {
         const modelConfig = configs.find((c) => c.config_key === 'ai_model');
         if (modelConfig) {
           setAiModel(modelConfig.config_value);
+        }
+
+        const providerConfig = configs.find((c) => c.config_key === 'ai_provider');
+        if (providerConfig) {
+          setAiProvider(providerConfig.config_value || 'chatai');
+        }
+
+        const apiKeyConfig = configs.find((c) => c.config_key === 'openrouter_api_key');
+        if (apiKeyConfig) {
+          setOpenrouterApiKey(apiKeyConfig.config_value || '');
         }
 
         const enabledConfig = configs.find((c) => c.config_key === 'ai_analysis_enabled');
@@ -540,6 +554,127 @@ export default function AiAnalysisPage() {
     });
   };
 
+  // 更新提供商配置
+  const handleProviderChange = (e: RadioChangeEvent) => {
+    const newProvider = e.target.value;
+
+    // 如果切换到 OpenRouter 但未配置 API Key，先切换显示配置区域，然后提示
+    if (newProvider === 'openrouter' && !openrouterApiKey) {
+      setAiProvider(newProvider); // 先切换，让配置区域显示
+      message.warning({
+        content: '请先在下方配置 OpenRouter API Key，保存后才能使用',
+        duration: 5,
+      });
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认切换AI提供商？',
+      icon: <ExclamationCircleOutlined />,
+      content: `即将切换到 ${newProvider === 'chatai' ? 'ChatAI (淘宝商家)' : 'OpenRouter (多渠道)'}，新的分析任务将使用此提供商。`,
+      okText: '确认切换',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const response = await fetch('/api/system/ai-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              config_key: 'ai_provider',
+              config_value: newProvider,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            setAiProvider(newProvider);
+            message.success('提供商切换成功');
+          } else {
+            message.error(data.error || '切换失败');
+          }
+        } catch (error) {
+          console.error('切换提供商失败:', error);
+          message.error('切换提供商失败');
+        }
+      },
+      onCancel: () => {
+        // 取消时恢复原值
+        setAiProvider(aiProvider);
+      },
+    });
+  };
+
+  // 更新 OpenRouter API Key
+  const handleApiKeySave = async () => {
+    if (!openrouterApiKey.trim()) {
+      message.warning('请输入 OpenRouter API Key');
+      return;
+    }
+
+    // 验证 API Key 格式
+    if (!openrouterApiKey.trim().startsWith('sk-or-v1-')) {
+      message.warning('API Key 格式不正确，应以 sk-or-v1- 开头');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/system/ai-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config_key: 'openrouter_api_key',
+          config_value: openrouterApiKey.trim(),
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        message.success('OpenRouter API Key 保存成功');
+        
+        // 如果当前选择的是 OpenRouter，询问是否正式切换
+        if (aiProvider === 'openrouter') {
+          Modal.confirm({
+            title: '确认切换到 OpenRouter？',
+            icon: <ExclamationCircleOutlined />,
+            content: 'API Key 已保存，是否现在正式切换到 OpenRouter 提供商？',
+            okText: '确认切换',
+            cancelText: '暂不切换',
+            onOk: async () => {
+              try {
+                const switchResponse = await fetch('/api/system/ai-config', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    config_key: 'ai_provider',
+                    config_value: 'openrouter',
+                  }),
+                });
+
+                const switchData = await switchResponse.json();
+
+                if (switchData.success) {
+                  message.success('已切换到 OpenRouter 提供商');
+                } else {
+                  message.error(switchData.error || '切换失败');
+                }
+              } catch (error) {
+                console.error('切换提供商失败:', error);
+                message.error('切换提供商失败');
+              }
+            },
+          });
+        }
+      } else {
+        message.error(data.error || '保存失败');
+      }
+    } catch (error) {
+      console.error('保存 API Key 失败:', error);
+      message.error('保存失败');
+    }
+  };
+
   // 切换总开关
   const handleToggle = (checked: boolean) => {
     Modal.confirm({
@@ -728,6 +863,68 @@ export default function AiAnalysisPage() {
               </Card>
             </Col>
           </Row>
+        </Card>
+
+        {/* AI提供商配置 */}
+        <Card title="AI提供商配置" style={{ marginBottom: 24 }}>
+          <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <div>
+              <Text strong style={{ marginRight: 16 }}>
+                当前使用提供商：
+              </Text>
+              <Radio.Group value={aiProvider} onChange={handleProviderChange}>
+                <Space direction="vertical">
+                  <Radio value="chatai">ChatAI (淘宝商家)</Radio>
+                  <Radio value="openrouter">OpenRouter (多渠道)</Radio>
+                </Space>
+              </Radio.Group>
+            </div>
+
+            {/* 当选择 OpenRouter 时显示 API Key 配置 */}
+            {aiProvider === 'openrouter' && (
+              <div style={{ 
+                paddingLeft: 24, 
+                borderLeft: '3px solid #1890ff',
+                backgroundColor: '#f0f5ff',
+                padding: 16,
+                borderRadius: 4,
+              }}>
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  <div>
+                    <Text strong>OpenRouter API Key 配置：</Text>
+                    {!openrouterApiKey && (
+                      <Tag color="warning" style={{ marginLeft: 8 }}>需要配置</Tag>
+                    )}
+                    {openrouterApiKey && (
+                      <Tag color="success" style={{ marginLeft: 8 }}>已配置</Tag>
+                    )}
+                  </div>
+                  <Space.Compact style={{ width: '100%', maxWidth: 600 }}>
+                    <Input.Password
+                      placeholder="sk-or-v1-xxx"
+                      value={openrouterApiKey}
+                      onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                      autoComplete="off"
+                    />
+                    <Button
+                      type="primary"
+                      icon={<SaveOutlined />}
+                      onClick={handleApiKeySave}
+                    >
+                      保存并启用
+                    </Button>
+                  </Space.Compact>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    • API Key 格式：sk-or-v1-xxx
+                    <br />
+                    • 保存后将自动切换到 OpenRouter 提供商
+                    <br />
+                    • 获取 API Key：<a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">https://openrouter.ai/keys</a>
+                  </Text>
+                </Space>
+              </div>
+            )}
+          </Space>
         </Card>
 
         {/* AI模型配置 */}

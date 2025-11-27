@@ -100,5 +100,7 @@ export const getAllSystemConfigs = async (): Promise<SystemConfig[]> => {
 export const CONFIG_KEYS = {
   AI_MODEL: 'ai_model',
   AI_ANALYSIS_ENABLED: 'ai_analysis_enabled',
+  AI_PROVIDER: 'ai_provider',              // AI提供商: chatai/openrouter
+  OPENROUTER_API_KEY: 'openrouter_api_key', // OpenRouter API Key
 } as const;
 
