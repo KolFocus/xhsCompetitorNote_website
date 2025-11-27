@@ -9,10 +9,12 @@
     "start": "next start",
     "lint": "next lint",
     "test:reports": "node scripts/test-reports-api.js",
-    "test:tagging": "node scripts/test-note-tagging-api.js"
+    "test:tagging": "node scripts/test-note-tagging-api.js",
+    "test:openrouter": "node scripts/test-openrouter-client.js"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
+    "@openrouter/sdk": "^0.1.27",
     "@supabase/ssr": "^0.1.0",
     "@supabase/supabase-js": "^2.39.3",
     "antd": "^5.12.8",
