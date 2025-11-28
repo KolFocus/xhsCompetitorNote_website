@@ -473,6 +473,7 @@ export const AI_ERROR_TYPES = {
   NO_CHANNEL: 'NoChannel',            // 无可用渠道（可重试）
   PARSE_ERROR: 'ParseError',          // AI响应解析失败（不可重试）
   NETWORK_ERROR: 'NetworkError',      // 网络/接口错误（可重试）
+  TIMEOUT_ERROR: 'TimeoutError',      // 超时错误（不可重试）
   CONTENT_EMPTY: 'ContentEmpty',      // 内容为空（不可重试）
   LOCK_CONFLICT: 'LockConflict',      // 锁定冲突（特殊处理）
   UNKNOWN: 'Unknown',                 // 未知错误（可重试）
@@ -487,44 +488,88 @@ const RETRYABLE_ERROR_TYPES: readonly string[] = [
 ];
 
 /**
- * 根据错误消息分类错误类型
- * @param errorMessage 错误消息
+ * 根据错误消息或错误对象分类错误类型
+ * @param errorMessage 错误消息或错误对象
+ * @param error 错误对象（可选，用于检查错误代码）
  * @returns 错误类型
  */
-export const classifyErrorType = (errorMessage: string): string => {
-  if (!errorMessage || typeof errorMessage !== 'string') {
-    return AI_ERROR_TYPES.UNKNOWN;
+export const classifyErrorType = (errorMessage: string | Error, error?: any): string => {
+  // 如果传入的是错误对象，提取消息和代码
+  let message: string;
+  let errorCode: string | undefined;
+  
+  if (errorMessage instanceof Error) {
+    message = errorMessage.message || '未知错误';
+    errorCode = (errorMessage as any).code;
+    error = errorMessage;
+  } else {
+    message = errorMessage || '未知错误';
+    errorCode = error?.code;
   }
 
-  const message = errorMessage.toLowerCase();
+  if (!message || typeof message !== 'string') {
+    message = '未知错误';
+  }
+
+  const messageLower = message.toLowerCase();
+
+  // 检查错误代码：识别超时错误（归类为不可重试）
+  if (errorCode) {
+    // undici 超时错误代码
+    if (
+      errorCode === 'UND_ERR_HEADERS_TIMEOUT' ||
+      errorCode === 'UND_ERR_BODY_TIMEOUT' ||
+      errorCode === 'UND_ERR_CONNECT_TIMEOUT' ||
+      errorCode === 'ETIMEDOUT'
+    ) {
+      return AI_ERROR_TYPES.TIMEOUT_ERROR;
+    }
+    // 其他网络错误（可重试）
+    if (
+      errorCode === 'ECONNRESET' ||
+      errorCode === 'ECONNREFUSED'
+    ) {
+      return AI_ERROR_TYPES.NETWORK_ERROR;
+    }
+  }
+
+  // 检查错误消息中的超时关键词（归类为不可重试）
+  if (
+    messageLower.includes('timeout') ||
+    messageLower.includes('超时') ||
+    messageLower.includes('timed out') ||
+    messageLower.includes('headers timeout')
+  ) {
+    return AI_ERROR_TYPES.TIMEOUT_ERROR;
+  }
 
   // 媒体文件过期
-  if (message.includes('failed to download file')) {
+  if (messageLower.includes('failed to download file')) {
     return AI_ERROR_TYPES.MEDIA_EXPIRED;
   }
 
   // 渠道被封禁
-  if (message.includes('被封禁')) {
+  if (messageLower.includes('被封禁')) {
     return AI_ERROR_TYPES.CHANNEL_BLOCKED;
   }
 
   // 无可用渠道
-  if (message.includes('无可用渠道')) {
+  if (messageLower.includes('无可用渠道')) {
     return AI_ERROR_TYPES.NO_CHANNEL;
   }
 
   // 解析错误
-  if (message.includes('解析失败') || message.includes('ai 响应')) {
+  if (messageLower.includes('解析失败') || messageLower.includes('ai 响应')) {
     return AI_ERROR_TYPES.PARSE_ERROR;
   }
 
   // 网络错误
-  if (message.includes('接口返回错误') || message.includes('ai 接口')) {
+  if (messageLower.includes('接口返回错误') || messageLower.includes('ai 接口')) {
     return AI_ERROR_TYPES.NETWORK_ERROR;
   }
 
   // 内容为空
-  if (message.includes('内容为空')) {
+  if (messageLower.includes('内容为空')) {
     return AI_ERROR_TYPES.CONTENT_EMPTY;
   }
 
@@ -672,8 +717,8 @@ export const processNoteAiAnalysis = async (
       ? noteIdOrRecord 
       : noteIdOrRecord.NoteId;
     
-    // 分类错误类型
-    const errorType = classifyErrorType(errorMessage);
+    // 分类错误类型（传入错误对象以检查错误代码）
+    const errorType = classifyErrorType(errorMessage, error);
     const canRetry = isRetryableError(errorType);
     
     // 更新失败状态到数据库
