@@ -58,6 +58,7 @@ interface SystemConfig {
 
 interface FailedNote {
   NoteId: string;
+  XhsNoteId: string | null;
   Title: string;
   AiStatus: string;
   AiErr: string;
@@ -480,7 +481,7 @@ export default function AiAnalysisPage() {
 
       // 准备导出数据
       const exportData = allNotes.map((note) => ({
-        笔记ID: note.NoteId,
+        笔记ID: note.XhsNoteId || note.NoteId || '', // 优先使用 XhsNoteId，如果没有则使用 NoteId
         标题: note.Title || '',
         博主: note.BloggerNickName || '',
         品牌: note.BrandName || '',

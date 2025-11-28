@@ -267,7 +267,7 @@ async function queryNotesWithPg(params: {
     // 查询笔记列表
     const notesSql = `
       SELECT 
-        n."NoteId", n."DateCode", n."Title", n."Content", n."CoverImage", 
+        n."NoteId", n."XhsNoteId", n."DateCode", n."Title", n."Content", n."CoverImage", 
         n."NoteType", n."IsBusiness", n."IsAdNote", n."PublishTime", n."PubDate",
         n."LikedCount", n."CollectedCount", n."CommentsCount", n."ViewCount", 
         n."ShareCount", n."BloggerId", n."BloggerNickName", n."BloggerProp",
