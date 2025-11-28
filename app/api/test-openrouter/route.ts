@@ -21,7 +21,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createOpenRouterClient } from '@/lib/openrouter';
+import { OpenRouter } from '@openrouter/sdk';
 
 // 硬编码配置（测试用）
 const OPENROUTER_CONFIG = {
@@ -55,7 +55,9 @@ export async function GET(request: NextRequest) {
     }
 
     // 初始化 OpenRouter 客户端
-    const client = createOpenRouterClient(OPENROUTER_CONFIG);
+    const client = new OpenRouter({
+      apiKey: OPENROUTER_CONFIG.apiKey,
+    });
 
     console.log('开始调用 OpenRouter API...');
     console.log('用户消息:', message);
@@ -69,37 +71,56 @@ export async function GET(request: NextRequest) {
       console.log('包含图片:', imageUrls.length, '张');
     }
 
-    // 构建选项
-    const options = {
-      model: model || undefined,
-      maxTokens: maxTokens ? parseInt(maxTokens, 10) : undefined,
-      temperature: temperature ? parseFloat(temperature) : undefined,
-    };
+    // 构建消息内容
+    const messageContent: any[] = [
+      {
+        type: 'text',
+        text: message,
+      },
+    ];
+
+    // 添加图片
+    imageUrls.forEach((url) => {
+      messageContent.push({
+        type: 'image_url',
+        imageUrl: { url },
+      });
+    });
 
     // 调用 OpenRouter API
-    let response;
-    if (imageUrls.length > 0) {
-      // 多模态调用
-      const content = await client.sendMultiModal(message, imageUrls, options);
-      response = {
-        content,
-        model: options.model || OPENROUTER_CONFIG.defaultModel,
-      };
-    } else {
-      // 纯文本调用
-      const content = await client.sendText(message, options);
-      response = {
-        content,
-        model: options.model || OPENROUTER_CONFIG.defaultModel,
-      };
-    }
+    const completion = await client.chat.send(
+      {
+        model: model || OPENROUTER_CONFIG.defaultModel,
+        messages: [
+          {
+            role: 'user',
+            content: messageContent as any,
+          },
+        ],
+        stream: false,
+        ...(maxTokens && { max_tokens: parseInt(maxTokens, 10) }),
+        ...(temperature && { temperature: parseFloat(temperature) }),
+      },
+      {
+        headers: {
+          'HTTP-Referer': OPENROUTER_CONFIG.siteUrl,
+          'X-Title': OPENROUTER_CONFIG.siteName,
+        },
+      }
+    );
 
     console.log('OpenRouter API 调用成功');
 
     // 返回结果
     return NextResponse.json({
       success: true,
-      data: response,
+      data: {
+        content: completion.choices[0]?.message?.content || '',
+        model: completion.model,
+        usage: completion.usage,
+        id: completion.id,
+        created: completion.created,
+      },
     });
   } catch (error: any) {
     console.error('OpenRouter API 调用失败:', error);
