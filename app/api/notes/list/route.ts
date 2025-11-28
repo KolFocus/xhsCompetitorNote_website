@@ -13,6 +13,7 @@
  * - endDate: 结束日期（可选，格式：YYYY-MM-DD）
  * - orderBy: 排序字段（默认：PublishTime）
  * - order: 排序方向（asc/desc，默认：desc）
+ * - keyword: 关键词搜索（可选，搜索 Title/XhsTitle/XhsContent/AiSummary/AiContentType/AiRelatedProducts）
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
+    const keyword = searchParams.get('keyword');
 
     // 验证分页参数
     if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -66,6 +68,19 @@ export async function GET(request: NextRequest) {
     }
     if (endDate) {
       query = query.lte('PubDate', endDate);
+    }
+    
+    // 关键词搜索（搜索 6 个字段）
+    if (keyword && keyword.trim()) {
+      const searchPattern = `%${keyword.trim()}%`;
+      query = query.or(
+        `Title.ilike.${searchPattern},` +
+        `XhsTitle.ilike.${searchPattern},` +
+        `XhsContent.ilike.${searchPattern},` +
+        `AiSummary.ilike.${searchPattern},` +
+        `AiContentType.ilike.${searchPattern},` +
+        `AiRelatedProducts.ilike.${searchPattern}`
+      );
     }
 
     // 应用排序

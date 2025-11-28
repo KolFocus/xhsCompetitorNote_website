@@ -50,6 +50,7 @@ export async function GET(
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const search = searchParams.get('search');
+    const keyword = searchParams.get('keyword'); // 关键词搜索
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
 
@@ -73,6 +74,7 @@ export async function GET(
           NoteId,
           Title,
           Content,
+          XhsTitle,
           XhsContent,
           CoverImage,
           XhsNoteUrl,
@@ -142,6 +144,21 @@ export async function GET(
             !note.Title?.toLowerCase().includes(searchLower) &&
             !note.BrandName?.toLowerCase().includes(searchLower)
           ) {
+            return null;
+          }
+        }
+        // 关键词搜索（搜索 6 个字段）
+        if (keyword && keyword.trim()) {
+          const keywordLower = keyword.toLowerCase();
+          const matchFound = 
+            note.Title?.toLowerCase().includes(keywordLower) ||
+            note.XhsTitle?.toLowerCase().includes(keywordLower) ||
+            note.XhsContent?.toLowerCase().includes(keywordLower) ||
+            note.AiSummary?.toLowerCase().includes(keywordLower) ||
+            note.AiContentType?.toLowerCase().includes(keywordLower) ||
+            note.AiRelatedProducts?.toLowerCase().includes(keywordLower);
+          
+          if (!matchFound) {
             return null;
           }
         }

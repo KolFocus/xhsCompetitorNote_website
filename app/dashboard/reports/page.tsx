@@ -28,10 +28,10 @@ import {
   Spin,
   Checkbox,
   Typography,
+  Input,
 } from 'antd';
 import {
   PlusOutlined,
-  ReloadOutlined,
   VideoCameraOutlined,
   PictureOutlined,
   LikeOutlined,
@@ -195,6 +195,7 @@ export default function ReportsPage() {
   }, []);
 
   // 筛选条件
+  const [keyword, setKeyword] = useState<string>(''); // 关键词搜索
   const [brandId, setBrandId] = useState<string | null>(null);
   const [bloggerId, setBloggerId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
@@ -229,7 +230,7 @@ export default function ReportsPage() {
       setPage(1); // 重置到第一页
       loadNotes(1, pageSize);
     }
-  }, [reportId, activeTab, brandId, bloggerId, dateRange, sortField, sortOrder]);
+  }, [reportId, activeTab, sortField, sortOrder]);
 
   const loadReports = async () => {
     try {
@@ -284,6 +285,7 @@ export default function ReportsPage() {
         pageSize: String(pageSizeValue),
         status: activeTab,
       });
+      if (keyword && keyword.trim()) params.set('keyword', keyword.trim());
       if (brandId) params.set('brandKey', brandId);
       if (bloggerId) params.set('bloggerId', bloggerId);
       if (dateRange) {
@@ -452,6 +454,39 @@ export default function ReportsPage() {
     return '¥' + yuan.toLocaleString(undefined, { maximumFractionDigits: 0 });
   };
 
+  // 关键词高亮函数
+  const highlightKeyword = (text: string | null | undefined, searchKeyword: string): React.ReactNode => {
+    if (!text || !searchKeyword || !searchKeyword.trim()) {
+      return text || '';
+    }
+
+    const searchTerm = searchKeyword.trim();
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (regex.test(part)) {
+            return (
+              <span
+                key={index}
+                style={{
+                  backgroundColor: '#fff566',
+                  fontWeight: 'bold',
+                  padding: '0 2px',
+                }}
+              >
+                {part}
+              </span>
+            );
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
+  };
+
   // 截断文本辅助函数
   const truncateText = (text: string | null | undefined, maxLength: number): string => {
     if (!text) return '';
@@ -557,7 +592,7 @@ export default function ReportsPage() {
                   {/* 标题和标签 */}
                   <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
                     <div style={{ marginBottom: 8, fontWeight: 500 }}>
-                      {record.title || '无标题'}
+                      {highlightKeyword(record.title, keyword) || '无标题'}
                     </div>
                   </Tooltip>
                   <Space size="small" wrap>
@@ -691,7 +726,7 @@ export default function ReportsPage() {
                     )}
                     <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
                       <div style={{ fontWeight: 400, flex: 1 }}>
-                        {text || '无标题'}
+                        {highlightKeyword(text, keyword) || '无标题'}
                       </div>
                     </Tooltip>
                   </div>
@@ -745,7 +780,7 @@ export default function ReportsPage() {
                         </Text>
                         <Tooltip title={record.aiContentType}>
                           <Text style={{ fontSize: 16 }}>
-                            {truncateText(record.aiContentType, 8)}
+                            {highlightKeyword(truncateText(record.aiContentType, 8), keyword)}
                           </Text>
                         </Tooltip>
                       </div>
@@ -756,7 +791,7 @@ export default function ReportsPage() {
                           相关产品：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {record.aiRelatedProducts}
+                          {highlightKeyword(record.aiRelatedProducts, keyword)}
                         </Text>
                       </div>
                     )}
@@ -766,7 +801,7 @@ export default function ReportsPage() {
                           内容总结：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {record.aiSummary}
+                          {highlightKeyword(record.aiSummary, keyword)}
                         </Text>
                       </div>
                     )}
@@ -1209,13 +1244,30 @@ export default function ReportsPage() {
                 />
               </Col>
               <Col>
-                <Button icon={<ReloadOutlined />} onClick={() => loadNotes()}>
-                  刷新
+                <Input
+                  placeholder="搜索标题、内容、AI分析结果等"
+                  allowClear
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  onPressEnter={() => {
+                    setPage(1);
+                    loadNotes(1, pageSize);
+                  }}
+                  style={{ width: 250 }}
+                />
+              </Col>
+              <Col>
+                <Button type="primary" onClick={() => {
+                  setPage(1);
+                  loadNotes(1, pageSize);
+                }}>
+                  搜索
                 </Button>
               </Col>
               <Col>
                 <Button
                   onClick={() => {
+                    setKeyword('');
                     setBrandId(null);
                     setBloggerId(null);
                     setDateRange(null);

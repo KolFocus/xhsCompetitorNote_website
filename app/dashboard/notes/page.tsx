@@ -24,9 +24,9 @@ import {
   Checkbox,
   Typography,
   message,
+  Input,
 } from 'antd';
 import {
-  ReloadOutlined,
   VideoCameraOutlined,
   PictureOutlined,
   LikeOutlined,
@@ -178,6 +178,7 @@ export default function NotesPage() {
   });
 
   // 过滤条件
+  const [keyword, setKeyword] = useState<string>(''); // 关键词搜索
   const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
   const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
   const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
@@ -256,6 +257,9 @@ export default function NotesPage() {
       pageSize: currentPageSize.toString(),
     });
 
+    if (keyword && keyword.trim()) {
+      params.append('keyword', keyword.trim());
+    }
     if (selectedBrand) {
       params.append('brandKey', selectedBrand);
     }
@@ -491,6 +495,7 @@ export default function NotesPage() {
 
   // 重置过滤条件
   const handleReset = () => {
+    setKeyword('');
     setSelectedBrand(undefined);
     setSelectedBlogger(undefined);
     setDateRange(null);
@@ -516,6 +521,39 @@ export default function NotesPage() {
     if (!text) return '';
     if (text.length <= maxLength) return text;
     return text.slice(0, maxLength) + '...';
+  };
+
+  // 关键词高亮函数
+  const highlightKeyword = (text: string | null | undefined, keyword: string): React.ReactNode => {
+    if (!text || !keyword || !keyword.trim()) {
+      return text || '';
+    }
+
+    const searchTerm = keyword.trim();
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (regex.test(part)) {
+            return (
+              <span
+                key={index}
+                style={{
+                  backgroundColor: '#fff566',
+                  fontWeight: 'bold',
+                  padding: '0 2px',
+                }}
+              >
+                {part}
+              </span>
+            );
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
   };
 
   // 渲染AI分析Tooltip内容
@@ -617,7 +655,7 @@ export default function NotesPage() {
                   {/* 标题和标签 */}
                   <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
                     <div style={{ marginBottom: 8, fontWeight: 500 }}>
-                      {record.Title || '无标题'}
+                      {highlightKeyword(record.Title, keyword) || '无标题'}
                     </div>
                   </Tooltip>
                   <Space size="small" wrap>
@@ -752,7 +790,7 @@ export default function NotesPage() {
                     )}
                     <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
                       <div style={{ fontWeight: 400, flex: 1 }}>
-                        {text || '无标题'}
+                        {highlightKeyword(text, keyword) || '无标题'}
                       </div>
                     </Tooltip>
                   </div>
@@ -806,7 +844,7 @@ export default function NotesPage() {
                         </Text>
                         <Tooltip title={record.AiContentType}>
                           <Text style={{ fontSize: 16 }}>
-                            {truncateText(record.AiContentType, 8)}
+                            {highlightKeyword(truncateText(record.AiContentType, 8), keyword)}
                           </Text>
                         </Tooltip>
                       </div>
@@ -817,7 +855,7 @@ export default function NotesPage() {
                           相关产品：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {record.AiRelatedProducts}
+                          {highlightKeyword(record.AiRelatedProducts, keyword)}
                         </Text>
                       </div>
                     )}
@@ -827,7 +865,7 @@ export default function NotesPage() {
                           内容总结：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {record.AiSummary}
+                          {highlightKeyword(record.AiSummary, keyword)}
                         </Text>
                       </div>
                     )}
@@ -1087,7 +1125,7 @@ export default function NotesPage() {
             </Select>
           </Col>
 
-          <Col xs={24} sm={12} md={8}>
+          <Col xs={24} sm={12} md={6}>
             <div style={{ marginBottom: 8 }}>
               <strong>发布日期：</strong>
             </div>
@@ -1099,11 +1137,29 @@ export default function NotesPage() {
             />
           </Col>
 
-          <Col xs={24} sm={12} md={4}>
-            <div style={{ marginBottom: 8 }}>&nbsp;</div>
+          <Col xs={24} sm={12} md={6}>
+            <div style={{ marginBottom: 8 }}>
+              <strong>关键词：</strong>
+            </div>
+            <Input
+              placeholder="搜索标题、内容、AI分析结果等"
+              allowClear
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onPressEnter={() => {
+                setPage(1);
+                loadNotes(1);
+              }}
+            />
+          </Col>
+
+          <Col xs={24} style={{ display: 'flex', alignItems: 'flex-end', marginTop: 8 }}>
             <Space>
-              <Button icon={<ReloadOutlined />} onClick={() => loadNotes(page)}>
-                刷新
+              <Button type="primary" onClick={() => {
+                setPage(1);
+                loadNotes(1);
+              }}>
+                搜索
               </Button>
               <Button onClick={handleReset}>重置</Button>
             </Space>

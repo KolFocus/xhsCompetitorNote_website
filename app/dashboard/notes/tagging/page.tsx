@@ -11,6 +11,7 @@ import {
   Col,
   Empty,
   Image,
+  Input,
   message,
   Modal,
   Row,
@@ -29,7 +30,6 @@ import {
   ExclamationCircleOutlined,
   LinkOutlined,
   PictureOutlined,
-  ReloadOutlined,
   VideoCameraOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -152,6 +152,7 @@ const NoteTaggingPage: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [bloggers, setBloggers] = useState<Blogger[]>([]);
+  const [keyword, setKeyword] = useState<string>(''); // 关键词搜索
   const [selectedReportId, setSelectedReportId] = useState<string | undefined>();
   const [selectedBrand, setSelectedBrand] = useState<string | undefined>();
   const [selectedBlogger, setSelectedBlogger] = useState<string | undefined>();
@@ -262,6 +263,9 @@ const NoteTaggingPage: React.FC = () => {
       });
 
       // 添加筛选参数
+      if (keyword && keyword.trim()) {
+        params.set('keyword', keyword.trim());
+      }
       if (selectedReportId) {
         params.set('reportId', selectedReportId);
       }
@@ -545,6 +549,39 @@ const NoteTaggingPage: React.FC = () => {
     return text.slice(0, maxLength) + '...';
   };
 
+  // 关键词高亮函数
+  const highlightKeyword = (text: string | null | undefined, searchKeyword: string): React.ReactNode => {
+    if (!text || !searchKeyword || !searchKeyword.trim()) {
+      return text || '';
+    }
+
+    const searchTerm = searchKeyword.trim();
+    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = text.split(regex);
+
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (regex.test(part)) {
+            return (
+              <span
+                key={index}
+                style={{
+                  backgroundColor: '#fff566',
+                  fontWeight: 'bold',
+                  padding: '0 2px',
+                }}
+              >
+                {part}
+              </span>
+            );
+          }
+          return <span key={index}>{part}</span>;
+        })}
+      </>
+    );
+  };
+
   const columns = [
     {
       title: '笔记',
@@ -597,7 +634,7 @@ const NoteTaggingPage: React.FC = () => {
                 placement="topLeft"
               >
                 <Title level={5} style={{ margin: 0, flex: 1, fontSize: 14 }}>
-                  {value || '未命名笔记'}
+                  {highlightKeyword(value, keyword) || '未命名笔记'}
                 </Title>
               </Tooltip>
               {record.XhsNoteLink && (
@@ -709,20 +746,20 @@ const NoteTaggingPage: React.FC = () => {
                 <div>
                   <Text strong style={{ fontSize: 16 }}>内容场景：</Text>
                   <Tooltip title={record.AiContentType}>
-                    <Text style={{ fontSize: 16 }}>{truncateText(record.AiContentType, 8)}</Text>
+                    <Text style={{ fontSize: 16 }}>{highlightKeyword(truncateText(record.AiContentType, 8), keyword)}</Text>
                   </Tooltip>
                 </div>
               )}
               {record.AiRelatedProducts && (
                 <div>
                   <Text strong style={{ fontSize: 16 }}>相关产品：</Text>
-                  <Text style={{ fontSize: 16 }}>{record.AiRelatedProducts}</Text>
+                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiRelatedProducts, keyword)}</Text>
                 </div>
               )}
               {record.AiSummary && (
                 <div>
                   <Text strong style={{ fontSize: 16 }}>内容总结：</Text>
-                  <Text style={{ fontSize: 16 }}>{record.AiSummary}</Text>
+                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiSummary, keyword)}</Text>
                 </div>
               )}
             </Space>
@@ -902,6 +939,22 @@ const NoteTaggingPage: React.FC = () => {
 
             <Col xs={24} sm={12} md={6}>
               <div style={{ marginBottom: 8 }}>
+                <strong>关键词：</strong>
+              </div>
+              <Input
+                placeholder="搜索标题、内容、AI分析结果等"
+                allowClear
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onPressEnter={() => {
+                  setPage(1);
+                  loadNotes(1, pageSize);
+                }}
+              />
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <div style={{ marginBottom: 8 }}>
                 <strong>标签筛选：</strong>
               </div>
                 <Select
@@ -939,14 +992,17 @@ const NoteTaggingPage: React.FC = () => {
               </Space>
             </Col>
 
-            <Col xs={24} sm={12} md={6}>
-              <div style={{ marginBottom: 8 }}>&nbsp;</div>
+            <Col xs={24} style={{ marginTop: 8 }}>
                 <Space>
-                <Button icon={<ReloadOutlined />} onClick={() => loadNotes(page)}>
-                      刷新
+                <Button type="primary" onClick={() => {
+                  setPage(1);
+                  loadNotes(1, pageSize);
+                }}>
+                      搜索
                     </Button>
                     <Button
                       onClick={() => {
+                    setKeyword('');
                     setSelectedReportId(undefined);
                     setSelectedBrand(undefined);
                     setSelectedBlogger(undefined);

@@ -16,6 +16,7 @@
  * - tagFilter: 标签筛选（可选，'__untagged__' 表示未打标，具体tagId表示有该标签）
  * - showUnanalyzed: 是否只显示未AI分析的笔记（可选，'true'/'false'）
  * - showMissingContent: 是否只显示缺失内容的笔记（可选，'true'/'false'）
+ * - keyword: 关键词搜索（可选，搜索 Title/XhsTitle/XhsContent/AiSummary/AiContentType/AiRelatedProducts）
  * 
  * 响应格式：
  * {
@@ -50,6 +51,7 @@ export async function GET(request: NextRequest) {
     const tagFilter = searchParams.get('tagFilter'); // 标签筛选
     const showUnanalyzed = searchParams.get('showUnanalyzed') === 'true'; // 只显示未分析
     const showMissingContent = searchParams.get('showMissingContent') === 'true'; // 只显示缺失内容
+    const keyword = searchParams.get('keyword'); // 关键词搜索
 
     // 验证分页参数
     if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -79,6 +81,7 @@ export async function GET(request: NextRequest) {
       order,
       showUnanalyzed,
       showMissingContent,
+      keyword,
     });
   } catch (error: any) {
     console.error('Error in notes API:', error);
@@ -112,6 +115,7 @@ async function queryNotesWithPg(params: {
   order: string;
   showUnanalyzed: boolean;
   showMissingContent: boolean;
+  keyword?: string | null; // 关键词搜索
 }) {
   try {
     const {
@@ -130,6 +134,7 @@ async function queryNotesWithPg(params: {
       order,
       showUnanalyzed,
       showMissingContent,
+      keyword,
     } = params;
     
     const offset = (page - 1) * pageSize;
@@ -234,6 +239,21 @@ async function queryNotesWithPg(params: {
     // 缺失内容筛选
     if (showMissingContent) {
       conditions.push(`(n."XhsNoteLink" IS NULL OR n."XhsNoteLink" = '')`);
+    }
+    
+    // 关键词搜索（搜索 6 个字段）
+    if (keyword && keyword.trim()) {
+      const searchPattern = `%${keyword.trim()}%`;
+      conditions.push(`(
+        n."Title" ILIKE $${paramIndex} OR
+        n."XhsTitle" ILIKE $${paramIndex} OR
+        n."XhsContent" ILIKE $${paramIndex} OR
+        n."AiSummary" ILIKE $${paramIndex} OR
+        n."AiContentType" ILIKE $${paramIndex} OR
+        n."AiRelatedProducts" ILIKE $${paramIndex}
+      )`);
+      queryParams.push(searchPattern);
+      paramIndex++;
     }
     
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -358,6 +378,7 @@ async function handleNotesQuery(params: {
   order: string;
   showUnanalyzed: boolean;
   showMissingContent: boolean;
+  keyword?: string | null; // 关键词搜索
 }) {
   const {
     tagSetId,
@@ -375,6 +396,7 @@ async function handleNotesQuery(params: {
     order,
     showUnanalyzed,
     showMissingContent,
+    keyword,
   } = params;
 
   // 使用统一的 PG 查询函数
@@ -394,6 +416,7 @@ async function handleNotesQuery(params: {
     order,
     showUnanalyzed,
     showMissingContent,
+    keyword,
   });
 
   // 处理结果
