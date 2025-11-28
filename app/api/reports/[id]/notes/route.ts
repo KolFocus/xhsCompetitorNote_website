@@ -100,6 +100,7 @@ export async function GET(
           AdPrice,
           OfficialVerified,
           XhsNoteLink,
+          XhsUserId,
           AiContentType,
           AiRelatedProducts,
           AiSummary
@@ -185,6 +186,7 @@ export async function GET(
           bloggerNickName: note.BloggerNickName,
           bloggerSmallAvatar: note.SmallAvatar,
           bloggerBigAvatar: note.BigAvatar,
+          xhsUserId: note.XhsUserId ?? null,
           officialVerified: note.OfficialVerified ?? null,
           brandId: note.BrandId,
           brandIdKey: note.BrandIdKey,

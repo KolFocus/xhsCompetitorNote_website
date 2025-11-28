@@ -114,6 +114,7 @@ interface Note {
   bloggerNickName: string;
   bloggerSmallAvatar: string | null;
   bloggerBigAvatar: string | null;
+  xhsUserId?: string | null;
   officialVerified?: boolean | null;
   brandId: string | null;
   brandIdKey: string | null;
@@ -854,9 +855,21 @@ export default function ReportsPage() {
                 </Tooltip>
               )}
             </div>
-            <span style={{ fontSize: 12 }}>
-              {record.bloggerNickName || '未知博主'}
-            </span>
+            {record.xhsUserId ? (
+              <a
+                href={`https://www.xiaohongshu.com/user/profile/${record.xhsUserId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 12, color: '#1890ff', cursor: 'pointer' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {record.bloggerNickName || '未知博主'}
+              </a>
+            ) : (
+              <span style={{ fontSize: 12 }}>
+                {record.bloggerNickName || '未知博主'}
+              </span>
+            )}
           </Space>
         );
       },

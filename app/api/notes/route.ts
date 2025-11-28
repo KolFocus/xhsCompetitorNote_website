@@ -273,7 +273,7 @@ async function queryNotesWithPg(params: {
         n."ShareCount", n."BloggerId", n."BloggerNickName", n."BloggerProp",
         n."BigAvatar", n."SmallAvatar", n."BrandId", n."BrandIdKey", n."BrandName",
         n."VideoDuration", n."CurrentUserIsFavorite", n."Fans", n."AdPrice",
-        n."OfficialVerified", n."XhsContent", n."XhsNoteLink",
+        n."OfficialVerified", n."XhsContent", n."XhsNoteLink", n."XhsUserId",
         n."AiContentType", n."AiRelatedProducts", n."AiSummary", n."AiStatus", n."AiErr"
       FROM qiangua_note_info n
       ${whereClause}

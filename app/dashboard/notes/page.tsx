@@ -108,6 +108,7 @@ interface Note {
   AdPrice?: number | null; // 单位：分
   OfficialVerified?: boolean | null;
   XhsNoteLink: string | null;
+  XhsUserId?: string | null;
   AiContentType: string | null;
   AiRelatedProducts: string | null;
   AiSummary: string | null;
@@ -918,9 +919,21 @@ export default function NotesPage() {
                 </Tooltip>
               )}
             </div>
-            <span style={{ fontSize: 12 }}>
-              {record.BloggerNickName || '未知博主'}
-            </span>
+            {record.XhsUserId ? (
+              <a
+                href={`https://www.xiaohongshu.com/user/profile/${record.XhsUserId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontSize: 12, color: '#1890ff', cursor: 'pointer' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {record.BloggerNickName || '未知博主'}
+              </a>
+            ) : (
+              <span style={{ fontSize: 12 }}>
+                {record.BloggerNickName || '未知博主'}
+              </span>
+            )}
           </Space>
         );
       },

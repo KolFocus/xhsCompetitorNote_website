@@ -297,7 +297,31 @@
         }
 
         const xhsNoteId = extractNoteIdFromUrl();
-        const noteLink = window.location.href.split('?')[0];
+        
+        // 从 URL 中提取并保留 xsec_token 参数，移除其他参数
+        function extractNoteLink(url) {
+            try {
+                const urlObj = new URL(url);
+                const xsecToken = urlObj.searchParams.get('xsec_token');
+                
+                if (xsecToken) {
+                    // 如果存在 xsec_token，只保留它
+                    urlObj.search = '';
+                    urlObj.searchParams.set('xsec_token', xsecToken);
+                    return urlObj.toString();
+                } else {
+                    // 如果不存在 xsec_token，只返回基础 URL
+                    urlObj.search = '';
+                    return urlObj.toString();
+                }
+            } catch (e) {
+                // 如果 URL 解析失败，回退到原来的方式
+                debugLog('URL 解析失败，使用回退方式:', e.message);
+                return url.split('?')[0];
+            }
+        }
+        
+        const noteLink = extractNoteLink(window.location.href);
 
         // 提取用户 ID
         const userId = noteData.user?.userId || noteData.userId || null;

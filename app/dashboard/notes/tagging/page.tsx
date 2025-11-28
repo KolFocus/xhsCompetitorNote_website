@@ -76,6 +76,7 @@ interface NoteRecord {
   BloggerNickName: string;
   BloggerSmallAvatar: string | null;
   BloggerId: string;
+  XhsUserId?: string | null;
   XhsContent: string | null;
   XhsNoteLink: string | null;
   AiContentType: string | null;
@@ -661,9 +662,21 @@ const NoteTaggingPage: React.FC = () => {
                   </Tag>
                 )}
               </Space>
-              <Text type="secondary" style={{ fontSize: 14 }}>
-              {record.BloggerNickName || '未知博主'}
-            </Text>
+              {record.XhsUserId ? (
+                <a
+                  href={`https://www.xiaohongshu.com/user/profile/${record.XhsUserId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 14, color: '#1890ff', cursor: 'pointer' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {record.BloggerNickName || '未知博主'}
+                </a>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 14 }}>
+                  {record.BloggerNickName || '未知博主'}
+                </Text>
+              )}
             </div>
           </div>
         );
