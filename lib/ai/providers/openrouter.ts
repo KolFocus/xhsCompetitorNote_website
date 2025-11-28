@@ -5,7 +5,7 @@
 
 import type { NoteRecord, AiAnalysisResult } from '../noteAnalysis';
 import {
-  collectMediaUrls,
+  collectMediaUrlsSeparated,
   buildNoteAnalysisPrompt,
   parseAiResponseContent,
 } from '../noteAnalysis';
@@ -47,8 +47,8 @@ export const executeOpenRouterAnalysis = async (
     apiKey: trimmedApiKey,
   });
 
-  // 3. 收集媒体 URL
-  const mediaUrls = collectMediaUrls(note);
+  // 3. 分别收集图片和视频 URL
+  const { imageUrls, videoUrls } = collectMediaUrlsSeparated(note);
 
   // 4. 构建 Prompt
   const prompt = buildNoteAnalysisPrompt(note);
@@ -59,7 +59,8 @@ export const executeOpenRouterAnalysis = async (
   log.info('OpenRouter 分析开始', {
     noteId: note.NoteId,
     model: openRouterModel,
-    mediaCount: mediaUrls.length,
+    imageCount: imageUrls.length,
+    videoCount: videoUrls.length,
   });
 
   // 6. 构建消息内容
@@ -71,10 +72,19 @@ export const executeOpenRouterAnalysis = async (
   ];
 
   // 添加图片（注意：OpenRouter SDK 使用驼峰命名 imageUrl）
-  mediaUrls.forEach((url) => {
+  imageUrls.forEach((url) => {
     messageContent.push({
       type: 'image_url',
       imageUrl: { url },  // 使用 imageUrl 而不是 image_url
+    });
+  });
+
+  // 添加视频（根据 OpenRouter 文档，使用 video_url 类型，SDK 使用驼峰命名 videoUrl）
+  // 注意：Google Gemini on AI Studio 只支持 YouTube 链接，其他视频 URL 可能不支持
+  videoUrls.forEach((url) => {
+    messageContent.push({
+      type: 'video_url',
+      videoUrl: { url },  // 使用 videoUrl 而不是 video_url
     });
   });
 

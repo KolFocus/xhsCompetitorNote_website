@@ -102,6 +102,48 @@ export const collectMediaUrls = (note: NoteRecord): string[] => {
   return Array.from(urlSet);
 };
 
+/**
+ * 分别收集图片和视频URL
+ * @param note 笔记记录
+ * @returns 包含图片URL数组和视频URL数组的对象
+ */
+export const collectMediaUrlsSeparated = (note: NoteRecord): {
+  imageUrls: string[];
+  videoUrls: string[];
+} => {
+  const imageUrlSet = new Set<string>();
+  const videoUrlSet = new Set<string>();
+
+  // 处理 XhsImages：逗号分隔的图片链接集合，只取前 12 个
+  if (note.XhsImages && typeof note.XhsImages === 'string') {
+    const imageUrls = note.XhsImages
+      .split(',')
+      .map((url) => url.trim())
+      .filter((url) => url.length > 0)
+      .slice(0, 12); // 只取前 12 个链接
+
+    for (const url of imageUrls) {
+      const normalized = normalizeUrl(url);
+      if (normalized) {
+        imageUrlSet.add(normalized);
+      }
+    }
+  }
+
+  // 处理 XhsVideo：视频链接（可能为空）
+  if (note.XhsVideo && typeof note.XhsVideo === 'string') {
+    const normalized = normalizeUrl(note.XhsVideo);
+    if (normalized) {
+      videoUrlSet.add(normalized);
+    }
+  }
+
+  return {
+    imageUrls: Array.from(imageUrlSet),
+    videoUrls: Array.from(videoUrlSet),
+  };
+};
+
 export const buildNoteAnalysisPrompt = (
   note: NoteRecord,
 ): string => {

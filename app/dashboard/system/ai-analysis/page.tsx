@@ -430,14 +430,16 @@ export default function AiAnalysisPage() {
       let hasMore = true;
 
       while (hasMore) {
+        // 使用 /api/notes 接口，通过 showMissingContent 参数查询 XhsNoteLink 为空的记录
+        // 这与统计条件一致：统计使用的是 XhsNoteLink 为空，而不是 AiStatus = '无内容'
         const params = new URLSearchParams({
-          aiStatus: '无内容',
+          showMissingContent: 'true',
           page: String(page),
           pageSize: String(pageSize),
         });
 
-        console.log(`请求第 ${page} 页数据:`, `/api/system/ai-analysis?${params.toString()}`);
-        const response = await fetch(`/api/system/ai-analysis?${params.toString()}`);
+        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
+        const response = await fetch(`/api/notes?${params.toString()}`);
         
         if (!response.ok) {
           throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
