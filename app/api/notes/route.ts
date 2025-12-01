@@ -16,6 +16,7 @@
  * - tagFilter: 标签筛选（可选，'__untagged__' 表示未打标，具体tagId表示有该标签）
  * - showUnanalyzed: 是否只显示未AI分析的笔记（可选，'true'/'false'）
  * - showMissingContent: 是否只显示缺失内容的笔记（可选，'true'/'false'）
+ * - showNoteInvalid: 是否只显示不可见笔记（可选，'true'/'false'）
  * - keyword: 关键词搜索（可选，搜索 Title/XhsTitle/XhsContent/AiSummary/AiContentType/AiRelatedProducts）
  * 
  * 响应格式：
@@ -51,6 +52,7 @@ export async function GET(request: NextRequest) {
     const tagFilter = searchParams.get('tagFilter'); // 标签筛选
     const showUnanalyzed = searchParams.get('showUnanalyzed') === 'true'; // 只显示未分析
     const showMissingContent = searchParams.get('showMissingContent') === 'true'; // 只显示缺失内容
+    const showNoteInvalid = searchParams.get('showNoteInvalid') === 'true'; // 只显示不可见笔记
     const keyword = searchParams.get('keyword'); // 关键词搜索
 
     // 验证分页参数
@@ -81,6 +83,7 @@ export async function GET(request: NextRequest) {
       order,
       showUnanalyzed,
       showMissingContent,
+      showNoteInvalid,
       keyword,
     });
   } catch (error: any) {
@@ -115,6 +118,7 @@ async function queryNotesWithPg(params: {
   order: string;
   showUnanalyzed: boolean;
   showMissingContent: boolean;
+  showNoteInvalid: boolean;
   keyword?: string | null; // 关键词搜索
 }) {
   try {
@@ -134,6 +138,7 @@ async function queryNotesWithPg(params: {
       order,
       showUnanalyzed,
       showMissingContent,
+      showNoteInvalid,
       keyword,
     } = params;
     
@@ -236,9 +241,15 @@ async function queryNotesWithPg(params: {
       conditions.push(`n."AiStatus" != '分析中'`);
     }
     
-    // 缺失内容筛选
+    // 缺失内容筛选（排除笔记不可见的）
     if (showMissingContent) {
       conditions.push(`(n."XhsNoteLink" IS NULL OR n."XhsNoteLink" = '')`);
+      conditions.push(`(n."XhsNoteInvalid" IS NULL OR n."XhsNoteInvalid" = false)`);
+    }
+    
+    // 笔记不可见筛选
+    if (showNoteInvalid) {
+      conditions.push(`n."XhsNoteInvalid" = true`);
     }
     
     // 关键词搜索（搜索 6 个字段）
@@ -273,7 +284,7 @@ async function queryNotesWithPg(params: {
         n."ShareCount", n."BloggerId", n."BloggerNickName", n."BloggerProp",
         n."BigAvatar", n."SmallAvatar", n."BrandId", n."BrandIdKey", n."BrandName",
         n."VideoDuration", n."CurrentUserIsFavorite", n."Fans", n."AdPrice",
-        n."OfficialVerified", n."XhsContent", n."XhsNoteLink", n."XhsUserId",
+        n."OfficialVerified", n."XhsContent", n."XhsNoteLink", n."XhsUserId", n."XhsNoteInvalid",
         n."AiContentType", n."AiRelatedProducts", n."AiSummary", n."AiStatus", n."AiErr"
       FROM qiangua_note_info n
       ${whereClause}
@@ -378,6 +389,7 @@ async function handleNotesQuery(params: {
   order: string;
   showUnanalyzed: boolean;
   showMissingContent: boolean;
+  showNoteInvalid: boolean;
   keyword?: string | null; // 关键词搜索
 }) {
   const {
@@ -396,6 +408,7 @@ async function handleNotesQuery(params: {
     order,
     showUnanalyzed,
     showMissingContent,
+    showNoteInvalid,
     keyword,
   } = params;
 
@@ -416,6 +429,7 @@ async function handleNotesQuery(params: {
     order,
     showUnanalyzed,
     showMissingContent,
+    showNoteInvalid,
     keyword,
   });
 

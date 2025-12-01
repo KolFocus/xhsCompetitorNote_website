@@ -46,6 +46,7 @@ interface AiStats {
   processing: number;
   failed: number;
   noContent: number;
+  noteInvalid: number;
   total: number;
 }
 
@@ -79,6 +80,7 @@ export default function AiAnalysisPage() {
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);
   const [exporting, setExporting] = useState(false);
   const [exportingNoContent, setExportingNoContent] = useState(false);
+  const [exportingNoteInvalid, setExportingNoteInvalid] = useState(false);
   const [countdown, setCountdown] = useState(60);
   
   // 失败列表弹窗相关状态
@@ -516,6 +518,108 @@ export default function AiAnalysisPage() {
     }
   };
 
+  // 导出笔记不可见列表
+  const handleExportNoteInvalid = async () => {
+    if (exportingNoteInvalid) {
+      console.log('正在导出中，请稍候...');
+      return;
+    }
+    
+    try {
+      setExportingNoteInvalid(true);
+      console.log('开始导出笔记不可见列表...');
+
+      // 分页获取所有不可见记录
+      const allNotes: FailedNote[] = [];
+      let page = 1;
+      const pageSize = 100; // API 限制最大 100
+      let hasMore = true;
+
+      while (hasMore) {
+        // 使用 /api/notes 接口，通过 showNoteInvalid 参数查询 XhsNoteInvalid = true 的记录
+        const params = new URLSearchParams({
+          showNoteInvalid: 'true',
+          page: String(page),
+          pageSize: String(pageSize),
+        });
+
+        console.log(`请求第 ${page} 页数据:`, `/api/notes?${params.toString()}`);
+        const response = await fetch(`/api/notes?${params.toString()}`);
+        
+        if (!response.ok) {
+          throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.error || '获取数据失败');
+        }
+
+        const notes: FailedNote[] = result.data.list || [];
+        const total = result.data.total || 0;
+        
+        console.log(`第 ${page} 页获取到 ${notes.length} 条记录，总共 ${total} 条`);
+        
+        allNotes.push(...notes);
+        
+        // 判断是否还有更多数据
+        if (allNotes.length >= total || notes.length < pageSize) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+
+      console.log(`总共获取到 ${allNotes.length} 条笔记不可见记录`);
+
+      if (allNotes.length === 0) {
+        message.warning('暂无笔记不可见记录可导出');
+        return;
+      }
+
+      // 动态导入 xlsx
+      console.log('开始导入 xlsx 库...');
+      const XLSX = await import('xlsx');
+      console.log('xlsx 库导入成功');
+
+      // 准备导出数据
+      const exportData = allNotes.map((note) => ({
+        笔记ID: note.XhsNoteId || note.NoteId || '', // 优先使用 XhsNoteId，如果没有则使用 NoteId
+        标题: note.Title || '',
+        博主: note.BloggerNickName || '',
+        品牌: note.BrandName || '',
+        发布时间: note.PublishTime || '',
+      }));
+
+      console.log('准备创建工作表...');
+      // 创建工作表
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '笔记不可见列表');
+
+      // 生成文件名
+      const now = new Date();
+      const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const filename = `笔记不可见列表_${timestamp}.xlsx`;
+
+      console.log('开始下载文件:', filename);
+      // 下载文件
+      XLSX.writeFile(workbook, filename);
+      console.log('文件下载完成');
+      
+      message.success(`导出成功，共 ${allNotes.length} 条记录`);
+    } catch (error) {
+      console.error('导出失败 - 详细错误:', error);
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      message.error(`导出失败: ${errorMsg}`);
+    } finally {
+      setExportingNoteInvalid(false);
+      console.log('导出流程结束');
+    }
+  };
+
   // 更新模型配置
   const handleModelChange = (e: RadioChangeEvent) => {
     const newModel = e.target.value;
@@ -860,6 +964,48 @@ export default function AiAnalysisPage() {
                       size="small"
                       icon={<MoreOutlined />}
                       loading={exportingNoContent}
+                    />
+                  </Dropdown>
+                </div>
+              </Card>
+            </Col>
+
+            <Col xs={24} sm={12} md={6}>
+              <Card>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Statistic
+                    title="笔记不可见"
+                    value={stats?.noteInvalid || 0}
+                    valueStyle={{ color: '#d4380d' }}
+                    suffix={
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        (已删除/下架)
+                      </Text>
+                    }
+                  />
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'export',
+                          label: '导出列表',
+                          icon: <DownloadOutlined />,
+                          disabled: exportingNoteInvalid,
+                        },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'export') {
+                          handleExportNoteInvalid();
+                        }
+                      },
+                    }}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<MoreOutlined />}
+                      loading={exportingNoteInvalid}
                     />
                   </Dropdown>
                 </div>

@@ -109,6 +109,7 @@ interface Note {
   OfficialVerified?: boolean | null;
   XhsNoteLink: string | null;
   XhsUserId?: string | null;
+  XhsNoteInvalid?: boolean | null;
   AiContentType: string | null;
   AiRelatedProducts: string | null;
   AiSummary: string | null;
@@ -637,6 +638,7 @@ export default function NotesPage() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
+                      position: 'relative',
                     }}
                   >
                     {record.CoverImage ? (
@@ -650,6 +652,27 @@ export default function NotesPage() {
                       />
                     ) : (
                       <Text type="secondary">无封面</Text>
+                    )}
+                    {/* 笔记不可见蒙层 */}
+                    {record.XhsNoteInvalid && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          background: 'rgba(0, 0, 0, 0.6)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          zIndex: 10,
+                        }}
+                      >
+                        <span style={{ color: 'white', fontSize: 16, fontWeight: 500 }}>
+                          不可见
+                        </span>
+                      </div>
                     )}
                   </div>
 

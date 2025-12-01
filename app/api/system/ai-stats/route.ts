@@ -19,6 +19,7 @@ export async function GET() {
       { count: processingCount },
       { count: failedCount },
       { count: noContentCount },
+      { count: noteInvalidCount },
     ] = await Promise.all([
       // 1. 待分析（排除 XhsNoteLink 为空）
       supabase
@@ -44,11 +45,18 @@ export async function GET() {
         .not('XhsNoteLink', 'is', null)
         .neq('XhsNoteLink', ''),
 
-      // 4. 无内容（XhsNoteLink 为空）
+      // 4. 无内容（XhsNoteLink 为空，但不包括不可见笔记）
       supabase
         .from('qiangua_note_info')
         .select('NoteId', { count: 'exact', head: true })
-        .or('XhsNoteLink.is.null,XhsNoteLink.eq.'),
+        .or('XhsNoteLink.is.null,XhsNoteLink.eq.')
+        .eq('XhsNoteInvalid', false),
+
+      // 5. 笔记不可见（XhsNoteInvalid = true）
+      supabase
+        .from('qiangua_note_info')
+        .select('NoteId', { count: 'exact', head: true })
+        .eq('XhsNoteInvalid', true),
     ]);
 
     const stats = {
@@ -56,6 +64,7 @@ export async function GET() {
       processing: processingCount || 0,
       failed: failedCount || 0,
       noContent: noContentCount || 0,
+      noteInvalid: noteInvalidCount || 0,
       total: 0, // 前端暂不显示总数，避免额外查询开销
     };
 

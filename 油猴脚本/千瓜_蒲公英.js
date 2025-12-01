@@ -2320,10 +2320,32 @@
             noteDetailJson = await fetchNoteDetailWithGM(noteDetailUrl);
         } catch (err) {
             const errMsg = err && err.message ? err.message : String(err);
+            
+            // 网络请求失败，标记笔记不可见并保存 XhsNoteId
+            console.error('[noteDetail] 请求失败', err);
+            const invalidPayload = {
+                XhsNoteInvalid: true,
+                XhsNoteLink: null,
+                XhsNoteId: xhsNoteId,
+                XhsNoteJson: {
+                    error: true,
+                    message: errMsg,
+                    timestamp: new Date().toISOString()
+                }
+            };
+            
+            try {
+                await syncNoteDetailToSupabase(pgyNoteId, invalidPayload);
+                if (window.AZ_DEBUG) {
+                    debugLog('[noteDetail] 已标记笔记不可见（网络失败）', pgyNoteId);
+                }
+            } catch (syncErr) {
+                console.error('[noteDetail] 标记笔记不可见失败', syncErr);
+            }
+            
             if (propagateErrors) {
                 throw new Error(`获取笔记详情失败：${errMsg}`);
             }
-            console.error('[noteDetail] 请求失败', err);
             warnings.push(`获取笔记详情失败：${errMsg}`);
             return { success: false, warnings: Array.from(new Set(warnings)) };
         }
@@ -2331,7 +2353,7 @@
             debugLog('[noteDetail] detail json', noteDetailJson);
         }
         const detailData = extractNoteDetailData(noteDetailJson);
-        const noteUpdatePayload = buildNoteInfoUpdatePayload(detailData, noteDetailJson);
+        const noteUpdatePayload = buildNoteInfoUpdatePayload(detailData, noteDetailJson, xhsNoteId);
         const cacheNoteItem = fallbackNoteItem || findNoteItemInCache(pgyNoteId);
         if (noteUpdatePayload) {
             try {
@@ -2462,8 +2484,22 @@
         return noteDetailJson;
     }
 
-    function buildNoteInfoUpdatePayload(detailData, rawJson) {
+    function buildNoteInfoUpdatePayload(detailData, rawJson, xhsNoteId) {
+        // 场景1：检查业务失败（笔记不可见/已删除/审核不通过等）
+        if (rawJson && (rawJson.success === false || rawJson.data === null)) {
+            const errorMsg = rawJson.msg || rawJson.message || '笔记状态异常';
+            console.warn('[buildNoteInfoUpdatePayload] 笔记不可见', errorMsg);
+            return {
+                XhsNoteInvalid: true,
+                XhsNoteLink: null,
+                XhsNoteId: sanitizeNullableString(xhsNoteId),
+                XhsNoteJson: rawJson
+            };
+        }
+        
+        // 场景2：正常处理笔记详情
         if (!detailData || typeof detailData !== 'object') return null;
+        
         const xhsUserId = extractFirstNonEmpty([
             detailData.userId,
             detailData.user_id,
@@ -2485,9 +2521,10 @@
             XhsTitle: sanitizeNullableString(detailData.title),
             XhsContent: sanitizeNullableString(detailData.content),
             XhsImages: imagesCsv,
-            XhsNoteId: detailData.noteId,
+            XhsNoteId: sanitizeNullableString(detailData.noteId || xhsNoteId),
             XhsVideo: videoUrl,
-            XhsNoteJson: rawJson || detailData
+            XhsNoteJson: rawJson || detailData,
+            XhsNoteInvalid: false  // 成功获取详情，标记为有效
         };
         return payload;
     }

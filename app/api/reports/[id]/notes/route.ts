@@ -101,6 +101,7 @@ export async function GET(
           OfficialVerified,
           XhsNoteLink,
           XhsUserId,
+          XhsNoteInvalid,
           AiContentType,
           AiRelatedProducts,
           AiSummary
@@ -171,6 +172,7 @@ export async function GET(
           xhsContent: note.XhsContent,
           coverImage: note.CoverImage,
           xhsNoteLink: note.XhsNoteLink ?? null,
+          xhsNoteInvalid: note.XhsNoteInvalid ?? false,
           noteType: note.NoteType,
           isBusiness: note.IsBusiness,
           isAdNote: note.IsAdNote,
