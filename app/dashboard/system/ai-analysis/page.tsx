@@ -36,6 +36,9 @@ import {
   EyeOutlined,
   LinkOutlined,
   SaveOutlined,
+  FileImageOutlined,
+  VideoCameraOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import type { RadioChangeEvent } from 'antd';
 
@@ -69,6 +72,8 @@ interface FailedNote {
   BrandName: string | null;
   XhsNoteLink: string | null;
   XhsUserId: string | null;
+  XhsImages: string | null;
+  XhsVideo: string | null;
 }
 
 export default function AiAnalysisPage() {
@@ -92,6 +97,11 @@ export default function AiAnalysisPage() {
   const [failedFilterBrand, setFailedFilterBrand] = useState<string>('');
   const [failedFilterErrType, setFailedFilterErrType] = useState<string>('');
   const [brandList, setBrandList] = useState<Array<{ BrandId: string; BrandName: string }>>([]);
+
+  // 媒体检测相关状态
+  const [checkingNoteId, setCheckingNoteId] = useState<string | null>(null);
+  const [mediaCheckResult, setMediaCheckResult] = useState<any>(null);
+  const [mediaCheckModalVisible, setMediaCheckModalVisible] = useState(false);
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -412,6 +422,70 @@ export default function AiAnalysisPage() {
     } catch (error) {
       console.error('重置失败:', error);
       message.error('重置失败');
+    }
+  };
+
+  // 检测媒体资源
+  const handleCheckMedia = async (record: FailedNote) => {
+    // 解析媒体资源
+    const images = record.XhsImages 
+      ? record.XhsImages.split(',').map(url => url.trim()).filter(Boolean)
+      : [];
+    const videos = record.XhsVideo 
+      ? [record.XhsVideo.trim()]
+      : [];
+
+    // 检查是否有媒体资源
+    if (images.length === 0 && videos.length === 0) {
+      message.warning('该笔记没有媒体资源');
+      return;
+    }
+
+    try {
+      setCheckingNoteId(record.NoteId);
+      const loadingMsg = message.loading({ 
+        content: '正在检测媒体资源...', 
+        key: 'checking',
+        duration: 0
+      });
+
+      const response = await fetch('/api/notes/check-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noteId: record.NoteId,
+          noteTitle: record.Title,
+          images,
+          videos
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        const { summary } = result.data;
+        message.success({ 
+          content: `检测完成：${summary.successCount}个正常，${summary.failedCount}个失效`, 
+          key: 'checking',
+          duration: 3
+        });
+        setMediaCheckResult(result.data);
+        setMediaCheckModalVisible(true);
+      } else {
+        message.error({ 
+          content: result.error || '检测失败', 
+          key: 'checking' 
+        });
+      }
+
+    } catch (error) {
+      message.error({ 
+        content: '检测失败，请重试', 
+        key: 'checking' 
+      });
+      console.error('检测媒体资源失败:', error);
+    } finally {
+      setCheckingNoteId(null);
     }
   };
 
@@ -1331,20 +1405,31 @@ export default function AiAnalysisPage() {
             <Table.Column
               title="操作"
               key="action"
-              width={100}
+              width={180}
               fixed="right"
               render={(_, record: FailedNote) => (
-                <Popconfirm
-                  title="确认重置状态？"
-                  description='将此笔记重置为"待分析"状态'
-                  onConfirm={() => handleResetSingleNote(record.NoteId)}
-                  okText="确认"
-                  cancelText="取消"
-                >
-                  <Button type="link" size="small" icon={<RedoOutlined />}>
-                    重置
+                <Space size="small">
+                  <Button 
+                    type="link" 
+                    size="small" 
+                    icon={<LinkOutlined />}
+                    loading={checkingNoteId === record.NoteId}
+                    onClick={() => handleCheckMedia(record)}
+                  >
+                    检测资源
                   </Button>
-                </Popconfirm>
+                  <Popconfirm
+                    title="确认重置状态？"
+                    description='将此笔记重置为"待分析"状态'
+                    onConfirm={() => handleResetSingleNote(record.NoteId)}
+                    okText="确认"
+                    cancelText="取消"
+                  >
+                    <Button type="link" size="small" icon={<RedoOutlined />}>
+                      重置
+                    </Button>
+                  </Popconfirm>
+                </Space>
               )}
             />
           </Table>
@@ -1370,6 +1455,177 @@ export default function AiAnalysisPage() {
             onChange={(page) => loadFailedNotes(page)}
           />
         </div>
+      </Modal>
+
+      {/* 媒体检测结果弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <LinkOutlined style={{ color: '#1890ff' }} />
+            <span>媒体资源检测报告</span>
+          </Space>
+        }
+        open={mediaCheckModalVisible}
+        onCancel={() => setMediaCheckModalVisible(false)}
+        footer={
+          <Button type="primary" onClick={() => setMediaCheckModalVisible(false)}>
+            关闭
+          </Button>
+        }
+        width={800}
+      >
+        {mediaCheckResult && (
+          <div>
+            {/* 笔记信息 */}
+            <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+              <Text strong style={{ fontSize: 14 }}>
+                {mediaCheckResult.noteTitle}
+              </Text>
+            </Card>
+
+            {/* 统计卡片 */}
+            <Row gutter={16} style={{ marginBottom: 20 }}>
+              <Col span={8}>
+                <Card size="small" style={{ textAlign: 'center', background: '#e6f7ff', borderColor: '#1890ff' }}>
+                  <Statistic
+                    title="总资源数"
+                    value={mediaCheckResult.summary.totalCount}
+                    prefix={<FileImageOutlined style={{ color: '#1890ff' }} />}
+                    valueStyle={{ color: '#1890ff', fontSize: 24 }}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" style={{ textAlign: 'center', background: '#f6ffed', borderColor: '#52c41a' }}>
+                  <Statistic
+                    title="可用资源"
+                    value={mediaCheckResult.summary.successCount}
+                    prefix={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                    valueStyle={{ color: '#52c41a', fontSize: 24 }}
+                  />
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card size="small" style={{ textAlign: 'center', background: '#fff1f0', borderColor: '#ff4d4f' }}>
+                  <Statistic
+                    title="失效资源"
+                    value={mediaCheckResult.summary.failedCount}
+                    prefix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
+                    valueStyle={{ color: '#ff4d4f', fontSize: 24 }}
+                  />
+                </Card>
+              </Col>
+            </Row>
+
+            {/* 总大小显示 */}
+            {mediaCheckResult.summary.totalSizeFormatted && (
+              <Card size="small" style={{ marginBottom: 16, background: '#f0f5ff', borderColor: '#adc6ff' }}>
+                <Text>
+                  <strong>资源总大小：</strong>
+                  <Text style={{ fontSize: 16, color: '#1890ff', marginLeft: 8 }}>
+                    {mediaCheckResult.summary.totalSizeFormatted}
+                  </Text>
+                </Text>
+              </Card>
+            )}
+
+            <Divider orientation="left" style={{ marginTop: 24, marginBottom: 16 }}>资源详情</Divider>
+
+            {/* 详细列表 */}
+            <Space direction="vertical" style={{ width: '100%' }} size="middle">
+              {/* 正常资源 */}
+              {mediaCheckResult.results.filter((r: any) => r.status === 'success').length > 0 && (
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Tag color="success" icon={<CheckCircleOutlined />}>
+                      正常资源 ({mediaCheckResult.results.filter((r: any) => r.status === 'success').length})
+                    </Tag>
+                  </div>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {mediaCheckResult.results
+                      .filter((r: any) => r.status === 'success')
+                      .map((item: any, index: number) => (
+                        <Card 
+                          key={index}
+                          size="small"
+                          style={{ 
+                            borderLeft: '3px solid #52c41a',
+                            background: '#f6ffed'
+                          }}
+                        >
+                          <Space direction="vertical" style={{ width: '100%' }} size="small">
+                            <div>
+                              <Tag color={item.type === 'image' ? 'blue' : 'purple'}>
+                                {item.type === 'image' ? <FileImageOutlined /> : <VideoCameraOutlined />}
+                                {' '}
+                                {item.type === 'image' ? '图片' : '视频'}
+                              </Tag>
+                              <Tag color="green">{item.sizeFormatted || '未知大小'}</Tag>
+                              {item.contentType && (
+                                <Tag>{item.contentType}</Tag>
+                              )}
+                            </div>
+                            <Text 
+                              ellipsis={{ tooltip: item.url }} 
+                              copyable={{ text: item.url }}
+                              style={{ fontSize: 12, color: '#666' }}
+                            >
+                              {item.url}
+                            </Text>
+                          </Space>
+                        </Card>
+                      ))}
+                  </Space>
+                </div>
+              )}
+
+              {/* 失效资源 */}
+              {mediaCheckResult.results.filter((r: any) => r.status === 'failed').length > 0 && (
+                <div>
+                  <div style={{ marginBottom: 8 }}>
+                    <Tag color="error" icon={<CloseCircleOutlined />}>
+                      失效资源 ({mediaCheckResult.results.filter((r: any) => r.status === 'failed').length})
+                    </Tag>
+                  </div>
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    {mediaCheckResult.results
+                      .filter((r: any) => r.status === 'failed')
+                      .map((item: any, index: number) => (
+                        <Card 
+                          key={index}
+                          size="small"
+                          style={{ 
+                            borderLeft: '3px solid #ff4d4f',
+                            background: '#fff1f0'
+                          }}
+                        >
+                          <Space direction="vertical" style={{ width: '100%' }} size="small">
+                            <div>
+                              <Tag color={item.type === 'image' ? 'blue' : 'purple'}>
+                                {item.type === 'image' ? <FileImageOutlined /> : <VideoCameraOutlined />}
+                                {' '}
+                                {item.type === 'image' ? '图片' : '视频'}
+                              </Tag>
+                              <Tag color="red" icon={<WarningOutlined />}>
+                                {item.error || '无法访问'}
+                              </Tag>
+                            </div>
+                            <Text 
+                              ellipsis={{ tooltip: item.url }} 
+                              copyable={{ text: item.url }}
+                              style={{ fontSize: 12, color: '#666' }}
+                            >
+                              {item.url}
+                            </Text>
+                          </Space>
+                        </Card>
+                      ))}
+                  </Space>
+                </div>
+              )}
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   );

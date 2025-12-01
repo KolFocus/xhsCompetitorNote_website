@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('qiangua_note_info')
       .select(
-        'NoteId, DateCode, Title, Content, CoverImage, NoteType, IsBusiness, IsAdNote, PublishTime, PubDate, LikedCount, CollectedCount, CommentsCount, ViewCount, ShareCount, BloggerId, BloggerNickName, BloggerProp, BigAvatar, SmallAvatar, BrandId, BrandIdKey, BrandName, VideoDuration, CurrentUserIsFavorite, Fans, AdPrice, OfficialVerified, XhsContent, XhsNoteLink, XhsUserId, AiContentType, AiRelatedProducts, AiSummary, AiStatus, AiErr, AiErrType',
+        'NoteId, DateCode, Title, Content, CoverImage, NoteType, IsBusiness, IsAdNote, PublishTime, PubDate, LikedCount, CollectedCount, CommentsCount, ViewCount, ShareCount, BloggerId, BloggerNickName, BloggerProp, BigAvatar, SmallAvatar, BrandId, BrandIdKey, BrandName, VideoDuration, CurrentUserIsFavorite, Fans, AdPrice, OfficialVerified, XhsContent, XhsNoteLink, XhsUserId, XhsImages, XhsVideo, AiContentType, AiRelatedProducts, AiSummary, AiStatus, AiErr, AiErrType',
         { count: 'exact' }
       )
       .eq('AiStatus', aiStatus);

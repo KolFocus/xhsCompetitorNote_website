@@ -607,7 +607,7 @@ export default function ReportsPage() {
                         }}
                       >
                         <span style={{ color: 'white', fontSize: 16, fontWeight: 500 }}>
-                          不可见
+                        笔记不可见
                         </span>
                       </div>
                     )}
