@@ -208,13 +208,21 @@ export const buildNoteAnalysisPrompt = (
 };
 
 export const parseAiResponseContent = (content: string): AiAnalysisResult => {
-  if (typeof content !== 'string' || content.trim().length === 0) {
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+
+  if (typeof content !== 'string' || trimmed.length === 0) {
     throw new Error('AI 响应为空');
+  }
+
+  // 特殊约定：如果模型只返回 'ext'，视为命中敏感内容拦截
+  // 这里直接将失败原因写成「敏感内容」，方便在前端和日志中查看
+  if (trimmed === 'ext') {
+    throw new Error('敏感内容');
   }
 
   const match = content.match(/\^DT\^[\s\S]*?\^DT\^/);
   if (!match) {
-    throw new Error('AI 响应未包含 ^DT^ 包裹的 JSON 数据');
+    throw new Error('AI 响应未包含 ^DT^ 包裹的 JSON 数据：' + trimmed);
   }
 
   const rawJsonBlock = match[0];
@@ -471,6 +479,7 @@ export const AI_ERROR_TYPES = {
   MEDIA_EXPIRED: 'MediaExpired',      // 媒体文件过期（不可重试）
   CHANNEL_BLOCKED: 'ChannelBlocked',  // 渠道被封禁（可重试）
   NO_CHANNEL: 'NoChannel',            // 无可用渠道（可重试）
+  SENSITIVE_CONTENT: 'SensitiveContent', // 敏感内容（不可重试）
   PARSE_ERROR: 'ParseError',          // AI响应解析失败（不可重试）
   NETWORK_ERROR: 'NetworkError',      // 网络/接口错误（可重试）
   TIMEOUT_ERROR: 'TimeoutError',      // 超时错误（不可重试）
@@ -546,6 +555,11 @@ export const classifyErrorType = (errorMessage: string | Error, error?: any): st
   // 媒体文件过期
   if (messageLower.includes('failed to download file')) {
     return AI_ERROR_TYPES.MEDIA_EXPIRED;
+  }
+
+  // 敏感内容
+  if (message.includes('敏感内容')) {
+    return AI_ERROR_TYPES.SENSITIVE_CONTENT;
   }
 
   // 渠道被封禁
