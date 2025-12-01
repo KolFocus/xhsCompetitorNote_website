@@ -242,13 +242,28 @@
 
                 if (segments.length >= 2) {
                     const last = segments[segments.length - 1];       // 含 imageId 和 ! 后缀
-                    const prefix = segments[segments.length - 2];     // 前置目录，如 notes_pre_post / specm
 
                     // 从最后一段中截出 imageId：从开头到第一个 !（如果没有 ! 就是整段）
                     const bangIndex = last.indexOf('!');
                     const imageId = bangIndex >= 0 ? last.slice(0, bangIndex) : last;
 
-                    const key = `${prefix}/${imageId}`;
+                    // 默认只用 imageId（兼容 http://.../<hash>/<imageId> 这种结构）
+                    let key = imageId;
+
+                    if (segments.length >= 3) {
+                        const maybePrefix = segments[segments.length - 2]; // 可能是 hash，也可能是 notes_pre_post/specm
+                        const isHex32 = /^[0-9a-f]{32}$/i.test(maybePrefix);
+
+                        // 只有当“倒数第二段”不是 32 位十六进制串时，才认为它是需要保留的目录前缀
+                        // 例如：
+                        //   /.../6b9f71cb4164045161746d5ba3c2b203/1040g0...!  → 不加前缀
+                        //   /.../6b9f71cb4164045161746d5ba3c2b203/notes_pre_post/1040g0...! → 加 notes_pre_post
+                        //   /.../6b9f71cb4164045161746d5ba3c2b203/specm/1040g0...!        → 加 specm
+                        if (!isHex32) {
+                            key = `${maybePrefix}/${imageId}`;
+                        }
+                    }
+
                     return `http://ci.xiaohongshu.com/${key}?imageView2/2/w/1080/format/jpg`;
                 }
 
