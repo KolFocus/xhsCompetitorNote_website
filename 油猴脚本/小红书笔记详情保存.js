@@ -225,16 +225,46 @@
         debugLog('标题:', noteData.title);
 
         // 转换图片 URL 格式
-        // 从 http://sns-webpic-qc.xhscdn.com/.../1040g00831o4mmhgg5m00400vldghvll8i1g39mg!nd_dft_wlteh_webp_3
-        // 转换为 http://ci.xiaohongshu.com/1040g00831o4mmhgg5m00400vldghvll8i1g39mg?imageView2/2/w/1080/format/jpg
+        // 旧逻辑：
+        //   从 http://sns-webpic-qc.xhscdn.com/.../1040g00831o4mmhgg5m00400vldghvll8i1g39mg!nd_dft_wlteh_webp_3
+        //   转换为 http://ci.xiaohongshu.com/1040g00831o4mmhgg5m00400vldghvll8i1g39mg?imageView2/2/w/1080/format/jpg
+        //
+        // 新需求：
+        //   需要保留一段前缀目录 + imageId，例如：
+        //   1) .../notes_pre_post/1040g3k8...!nd_dft_wlteh_webp_3  →  notes_pre_post/1040g3k8...
+        //   2) .../specm/1040g3k8...!nd_dft_wlteh_webp_3          →  specm/1040g3k8...
         function convertImageUrl(url) {
             if (!url) return '';
             
-            // 提取图片 ID（从最后一个 / 到 ! 之间的部分）
-            const match = url.match(/\/([^\/]+?)(?:!|$)/);
-            if (match && match[1]) {
-                const imageId = match[1];
-                return `http://ci.xiaohongshu.com/${imageId}?imageView2/2/w/1080/format/jpg`;
+            try {
+                const u = new URL(url);
+                const segments = u.pathname.split('/').filter(Boolean); // 去掉空段
+
+                if (segments.length >= 2) {
+                    const last = segments[segments.length - 1];       // 含 imageId 和 ! 后缀
+                    const prefix = segments[segments.length - 2];     // 前置目录，如 notes_pre_post / specm
+
+                    // 从最后一段中截出 imageId：从开头到第一个 !（如果没有 ! 就是整段）
+                    const bangIndex = last.indexOf('!');
+                    const imageId = bangIndex >= 0 ? last.slice(0, bangIndex) : last;
+
+                    const key = `${prefix}/${imageId}`;
+                    return `http://ci.xiaohongshu.com/${key}?imageView2/2/w/1080/format/jpg`;
+                }
+
+                // 兜底：维持旧的基于正则的 imageId 提取逻辑
+                const match = url.match(/\/([^\/]+?)(?:!|$)/);
+                if (match && match[1]) {
+                    const imageId = match[1];
+                    return `http://ci.xiaohongshu.com/${imageId}?imageView2/2/w/1080/format/jpg`;
+                }
+            } catch (e) {
+                // URL 解析失败时，退回到旧逻辑
+                const match = url.match(/\/([^\/]+?)(?:!|$)/);
+                if (match && match[1]) {
+                    const imageId = match[1];
+                    return `http://ci.xiaohongshu.com/${imageId}?imageView2/2/w/1080/format/jpg`;
+                }
             }
             
             // 如果无法匹配，返回原 URL
