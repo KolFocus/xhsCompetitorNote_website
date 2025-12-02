@@ -45,6 +45,7 @@ import dayjs from 'dayjs';
 import type { Dayjs } from 'dayjs';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 dayjs.locale('zh-cn');
 
@@ -137,6 +138,8 @@ interface NotesResponse {
 }
 
 export default function NotesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [notes, setNotes] = useState<Note[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [bloggers, setBloggers] = useState<Blogger[]>([]);
@@ -223,14 +226,33 @@ export default function NotesPage() {
     loadFilters();
   }, []);
 
+  const searchParamsKey = searchParams?.toString();
+  useEffect(() => {
+    if (!searchParams) {
+      return;
+    }
+    const brandIdParam = searchParams.get('brandId');
+    const brandNameParam = searchParams.get('brandName');
+    if (brandIdParam && brandNameParam) {
+      const brandKeyFromQuery = `${brandIdParam}#KF#${brandNameParam}`;
+      if (selectedBrand !== brandKeyFromQuery) {
+        setSelectedBrand(brandKeyFromQuery);
+        setPage(1);
+      }
+    } else if (selectedBrand) {
+      setSelectedBrand(undefined);
+      setPage(1);
+    }
+  }, [searchParamsKey, selectedBrand]);
+
   // 加载统计数据
   const loadStats = async () => {
     try {
       const params = new URLSearchParams();
 
-      if (selectedBrand) {
-        params.append('brandId', selectedBrand);
-      }
+    if (selectedBrand) {
+      params.append('brandKey', selectedBrand);
+    }
       if (selectedBlogger) {
         params.append('bloggerId', selectedBlogger);
       }
@@ -502,6 +524,7 @@ export default function NotesPage() {
     setSelectedBlogger(undefined);
     setDateRange(null);
     setPage(1);
+    router.replace('/dashboard/notes');
     // 注意：不清除排序状态
   };
 
@@ -1119,7 +1142,20 @@ export default function NotesPage() {
               placeholder="选择品牌"
               allowClear
               value={selectedBrand}
-              onChange={setSelectedBrand}
+              onChange={(value) => {
+                setSelectedBrand(value);
+                setPage(1);
+                if (value) {
+                  const [brandIdValue, brandNameValue] = value.split('#KF#');
+                  const query = new URLSearchParams({
+                    brandId: brandIdValue,
+                    brandName: brandNameValue,
+                  }).toString();
+                  router.replace(`/dashboard/notes?${query}`);
+                } else {
+                  router.replace('/dashboard/notes');
+                }
+              }}
               showSearch
               filterOption={(input, option) => {
                 const label = typeof option?.label === 'string' ? option.label : String(option?.children || '');

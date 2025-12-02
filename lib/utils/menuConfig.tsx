@@ -18,14 +18,21 @@ export const menuItems: MenuItem[] = [
     key: 'notes-all',
     label: '全部笔记',
     icon: <FileTextOutlined />,
-    path: '/dashboard/notes',
+    children: [
+      {
+        key: 'notes-all-list',
+        label: '笔记列表',
+        icon: <FileTextOutlined />,
+        path: '/dashboard/notes',
+      },
+      {
+        key: 'notes-all-brands',
+        label: '品牌列表',
+        icon: <TagsOutlined />,
+        path: '/dashboard/notes/brands',
+      },
+    ],
   },
-  // {
-  //   key: 'brands-list',
-  //   label: '品牌列表',
-  //   icon: <TagsOutlined />,
-  //   path: '/dashboard/brands',
-  // },
   {
     key: 'content-tag',
     label: '内容标签',
