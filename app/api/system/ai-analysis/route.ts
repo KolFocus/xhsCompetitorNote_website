@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     const brandId = searchParams.get('brandId');
     const brandName = searchParams.get('brandName');
     const errType = searchParams.get('errType');
+    const excludeNoteInvalid = searchParams.get('excludeNoteInvalid') === 'true';
 
     // 验证必需参数
     if (!aiStatus) {
@@ -68,6 +69,11 @@ export async function GET(request: NextRequest) {
       if (brandName) {
         query = query.eq('BrandName', brandName);
       }
+    }
+
+    // 只返回可见笔记
+    if (excludeNoteInvalid) {
+      query = query.eq('XhsNoteInvalid', false);
     }
 
     // 应用错误类型筛选

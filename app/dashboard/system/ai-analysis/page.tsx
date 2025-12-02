@@ -89,19 +89,21 @@ export default function AiAnalysisPage() {
   const [countdown, setCountdown] = useState(60);
   
   // 失败列表弹窗相关状态
-  const [failedModalVisible, setFailedModalVisible] = useState(false);
-  const [failedNotes, setFailedNotes] = useState<FailedNote[]>([]);
-  const [loadingFailedNotes, setLoadingFailedNotes] = useState(false);
-  const [failedNotesPage, setFailedNotesPage] = useState(1);
-  const [failedNotesTotal, setFailedNotesTotal] = useState(0);
-  const [failedFilterBrand, setFailedFilterBrand] = useState<string>('');
-  const [failedFilterErrType, setFailedFilterErrType] = useState<string>('');
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
+  const [statusModalStatus, setStatusModalStatus] = useState<'分析失败' | '待分析'>('分析失败');
+  const [statusNotes, setStatusNotes] = useState<FailedNote[]>([]);
+  const [loadingStatusNotes, setLoadingStatusNotes] = useState(false);
+  const [statusNotesPage, setStatusNotesPage] = useState(1);
+  const [statusNotesTotal, setStatusNotesTotal] = useState(0);
+  const [statusFilterBrand, setStatusFilterBrand] = useState<string>('');
+  const [statusFilterErrType, setStatusFilterErrType] = useState<string>('');
   const [brandList, setBrandList] = useState<Array<{ BrandId: string; BrandName: string }>>([]);
 
   // 媒体检测相关状态
   const [checkingNoteId, setCheckingNoteId] = useState<string | null>(null);
   const [mediaCheckResult, setMediaCheckResult] = useState<any>(null);
   const [mediaCheckModalVisible, setMediaCheckModalVisible] = useState(false);
+  const [downloadingMedia, setDownloadingMedia] = useState(false);
 
   // 加载统计数据
   const loadStats = useCallback(async () => {
@@ -340,18 +342,28 @@ export default function AiAnalysisPage() {
   };
 
   // 加载失败列表
-  const loadFailedNotes = async (page: number = 1, brandFilter?: string, errTypeFilter?: string) => {
+  const loadStatusNotes = async (
+    page: number = 1,
+    brandFilter?: string,
+    errTypeFilter?: string,
+    statusOverride?: '分析失败' | '待分析',
+  ) => {
     try {
-      setLoadingFailedNotes(true);
+      setLoadingStatusNotes(true);
       const params = new URLSearchParams({
-        aiStatus: '分析失败',
+        aiStatus: statusOverride || statusModalStatus,
         page: String(page),
         pageSize: '20',
       });
 
+      const currentStatus = statusOverride || statusModalStatus;
+      if (currentStatus === '待分析') {
+        params.append('excludeNoteInvalid', 'true');
+      }
+
       // 添加筛选条件
-      const brand = brandFilter !== undefined ? brandFilter : failedFilterBrand;
-      const errType = errTypeFilter !== undefined ? errTypeFilter : failedFilterErrType;
+      const brand = brandFilter !== undefined ? brandFilter : statusFilterBrand;
+      const errType = errTypeFilter !== undefined ? errTypeFilter : statusFilterErrType;
       
       if (brand && brand.includes('#KF#')) {
         // 分割 BrandId#KF#BrandName
@@ -375,30 +387,26 @@ export default function AiAnalysisPage() {
         throw new Error(result.error || '获取数据失败');
       }
 
-      setFailedNotes(result.data.list || []);
-      setFailedNotesTotal(result.data.total || 0);
-      setFailedNotesPage(page);
+      setStatusNotes(result.data.list || []);
+      setStatusNotesTotal(result.data.total || 0);
+      setStatusNotesPage(page);
     } catch (error) {
       console.error('加载失败列表失败:', error);
       const errorMsg = error instanceof Error ? error.message : '未知错误';
       message.error(`加载失败: ${errorMsg}`);
     } finally {
-      setLoadingFailedNotes(false);
+      setLoadingStatusNotes(false);
     }
   };
 
-  // 打开失败列表弹窗
-  const handleViewFailedList = () => {
-    setFailedModalVisible(true);
-    setFailedFilterBrand('');
-    setFailedFilterErrType('');
+  // 打开指定状态列表弹窗
+  const handleViewStatusList = (status: '分析失败' | '待分析') => {
+    setStatusModalStatus(status);
+    setStatusModalVisible(true);
+    setStatusFilterBrand('');
+    setStatusFilterErrType('');
     loadBrandList();
-    loadFailedNotes(1, '', '');
-  };
-
-  // 筛选条件变化
-  const handleFilterChange = () => {
-    loadFailedNotes(1);
+    loadStatusNotes(1, '', '', status);
   };
 
   // 重置单条笔记状态
@@ -414,7 +422,7 @@ export default function AiAnalysisPage() {
 
       if (data.success) {
         message.success('重置成功');
-        loadFailedNotes(failedNotesPage); // 重新加载当前页
+        loadStatusNotes(statusNotesPage); // 重新加载当前页
         loadStats(); // 更新统计数据
       } else {
         message.error(data.error || '重置失败');
@@ -487,6 +495,91 @@ export default function AiAnalysisPage() {
     } finally {
       setCheckingNoteId(null);
     }
+  };
+
+  const handleDownloadMedia = () => {
+    if (!mediaCheckResult?.results || mediaCheckResult.results.length === 0) {
+      message.warning('暂无可下载的媒体资源');
+      return;
+    }
+
+    const downloadable = mediaCheckResult.results.filter(
+      (item: any) => item.status === 'success' && item.url,
+    );
+
+    if (downloadable.length === 0) {
+      message.warning('没有可下载的有效资源');
+      return;
+    }
+
+    if (downloadingMedia) {
+      message.info('下载任务处理中，请稍候...');
+      return;
+    }
+
+    setDownloadingMedia(true);
+
+    const getExtensionFromUrl = (url: string) => {
+      try {
+        const pathname = new URL(url).pathname;
+        const match = pathname.match(/\.([a-zA-Z0-9]+)(?:$|[?#])/);
+        return match ? `.${match[1]}` : '';
+      } catch {
+        return '';
+      }
+    };
+
+    const getExtensionFromContentType = (type?: string) => {
+      if (!type) return '';
+      const parts = type.split('/');
+      if (parts.length === 2) {
+        const suffix = parts[1].split('+')[0];
+        return `.${suffix}`;
+      }
+      return '';
+    };
+
+    const normalizedTitle =
+      mediaCheckResult.noteTitle?.replace(/[\\/:*?"<>|]/g, '_') || 'media';
+
+    (async () => {
+      for (let i = 0; i < downloadable.length; i += 1) {
+        const item = downloadable[i];
+        const extFromUrl = getExtensionFromUrl(item.url);
+        const extFromType = getExtensionFromContentType(item.contentType);
+        const fallbackExt = item.type === 'image' ? '.jpg' : '.mp4';
+        const extension = extFromUrl || extFromType || fallbackExt;
+        const fileName = `${normalizedTitle}_${item.type}_${i + 1}${extension}`;
+
+        try {
+          const response = await fetch(item.url, { mode: 'cors' });
+          if (!response.ok) {
+            throw new Error(`下载失败: ${response.status}`);
+          }
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+
+          const link = document.createElement('a');
+          link.href = objectUrl;
+          link.download = fileName;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          URL.revokeObjectURL(objectUrl);
+
+          // 避免浏览器同一时间触发多个保存提示
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        } catch (error) {
+          console.error('下载媒体资源失败:', error);
+          message.error(`资源下载失败：${fileName}`);
+        }
+      }
+
+      message.success('下载完成（如果浏览器提示，请选择允许多文件下载）');
+      setDownloadingMedia(false);
+    })();
   };
 
   // 导出笔记详情缺失列表
@@ -917,11 +1010,36 @@ export default function AiAnalysisPage() {
           <Row gutter={[16, 16]}>
             <Col xs={24} sm={12} md={6}>
               <Card>
-                <Statistic
-                  title="待分析"
-                  value={stats?.pending || 0}
-                  valueStyle={{ color: '#1890ff' }}
-                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Statistic
+                    title="待分析"
+                    value={stats?.pending || 0}
+                    valueStyle={{ color: '#1890ff' }}
+                  />
+                  <Dropdown
+                    menu={{
+                      items: [
+                        {
+                          key: 'view',
+                          label: '查看列表',
+                          icon: <EyeOutlined />,
+                        },
+                      ],
+                      onClick: ({ key }) => {
+                        if (key === 'view') {
+                          handleViewStatusList('待分析');
+                        }
+                      },
+                    }}
+                    placement="bottomRight"
+                  >
+                    <Button
+                      type="default"
+                      size="small"
+                      icon={<MoreOutlined />}
+                    />
+                  </Dropdown>
+                </div>
               </Card>
             </Col>
 
@@ -986,7 +1104,7 @@ export default function AiAnalysisPage() {
                       ],
                       onClick: ({ key }) => {
                         if (key === 'view') {
-                          handleViewFailedList();
+                          handleViewStatusList('分析失败');
                         } else if (key === 'reset') {
                           handleReset('分析失败', '分析失败');
                         } else if (key === 'export') {
@@ -1195,9 +1313,9 @@ export default function AiAnalysisPage() {
 
       {/* 失败列表弹窗 */}
       <Modal
-        title="AI分析失败列表"
-        open={failedModalVisible}
-        onCancel={() => setFailedModalVisible(false)}
+        title={statusModalStatus === '分析失败' ? 'AI分析失败列表' : '待分析列表'}
+        open={statusModalVisible}
+        onCancel={() => setStatusModalVisible(false)}
         footer={null}
         width={1400}
         destroyOnClose
@@ -1224,10 +1342,10 @@ export default function AiAnalysisPage() {
               const label = option?.label as string;
               return label.toLowerCase().includes(input.toLowerCase());
             }}
-            value={failedFilterBrand || undefined}
+            value={statusFilterBrand || undefined}
             onChange={(value) => {
-              setFailedFilterBrand(value || '');
-              loadFailedNotes(1, value || '', undefined);
+              setStatusFilterBrand(value || '');
+              loadStatusNotes(1, value || '', undefined);
             }}
             options={[
               ...brandList.map((brand) => ({
@@ -1236,32 +1354,36 @@ export default function AiAnalysisPage() {
               })),
             ]}
           />
-            <Text>错误类型：</Text>
-            <Select
-              style={{ width: 150 }}
-              placeholder="请选择错误类型"
-              allowClear
-              value={failedFilterErrType || undefined}
-              onChange={(value) => {
-                setFailedFilterErrType(value || '');
-                loadFailedNotes(1, undefined, value || '');
-              }}
-              options={[
-                { label: '媒体过期', value: 'MediaExpired' },
-                { label: '渠道封禁', value: 'ChannelBlocked' },
-                { label: '无可用渠道', value: 'NoChannel' },
-                { label: '敏感内容', value: 'SensitiveContent' },
-                { label: '解析错误', value: 'ParseError' },
-                { label: '网络错误', value: 'NetworkError' },
-                { label: '内容为空', value: 'ContentEmpty' },
-                { label: '未知错误', value: 'Unknown' },
-              ]}
-            />
+            {statusModalStatus === '分析失败' && (
+              <>
+                <Text>错误类型：</Text>
+                <Select
+                  style={{ width: 150 }}
+                  placeholder="请选择错误类型"
+                  allowClear
+                  value={statusFilterErrType || undefined}
+                  onChange={(value) => {
+                    setStatusFilterErrType(value || '');
+                    loadStatusNotes(1, undefined, value || '');
+                  }}
+                  options={[
+                    { label: '媒体过期', value: 'MediaExpired' },
+                    { label: '渠道封禁', value: 'ChannelBlocked' },
+                    { label: '无可用渠道', value: 'NoChannel' },
+                    { label: '敏感内容', value: 'SensitiveContent' },
+                    { label: '解析错误', value: 'ParseError' },
+                    { label: '网络错误', value: 'NetworkError' },
+                    { label: '内容为空', value: 'ContentEmpty' },
+                    { label: '未知错误', value: 'Unknown' },
+                  ]}
+                />
+              </>
+            )}
           </Space>
           <Button
             icon={<ReloadOutlined />}
-            onClick={() => loadFailedNotes(failedNotesPage)}
-            loading={loadingFailedNotes}
+            onClick={() => loadStatusNotes(statusNotesPage)}
+            loading={loadingStatusNotes}
           >
             刷新列表
           </Button>
@@ -1270,8 +1392,8 @@ export default function AiAnalysisPage() {
         {/* 表格内容区域 */}
         <div style={{ flex: 1, overflow: 'auto', padding: '0 24px', minHeight: 0 }}>
           <Table
-            dataSource={failedNotes}
-            loading={loadingFailedNotes}
+            dataSource={statusNotes}
+            loading={loadingStatusNotes}
             rowKey="NoteId"
             pagination={false}
             scroll={{ x: 1200 }}
@@ -1355,56 +1477,60 @@ export default function AiAnalysisPage() {
                 });
               }}
             />
-            <Table.Column
-              title="错误类型"
-              dataIndex="AiErrType"
-              key="AiErrType"
-              width={120}
-              render={(errType) => {
-                if (!errType) return '-';
-                
-                // 根据错误类型显示不同颜色的标签
-                const colorMap: Record<string, string> = {
-                  MediaExpired: 'orange',
-                  ChannelBlocked: 'red',
-                  NoChannel: 'volcano',
-                  SensitiveContent: 'purple',
-                  ParseError: 'magenta',
-                  NetworkError: 'blue',
-                  ContentEmpty: 'default',
-                  Unknown: 'default',
-                };
-                
-                const labelMap: Record<string, string> = {
-                  MediaExpired: '媒体过期',
-                  ChannelBlocked: '渠道封禁',
-                  NoChannel: '无可用渠道',
-                  SensitiveContent: '敏感内容',
-                  ParseError: '解析错误',
-                  NetworkError: '网络错误',
-                  ContentEmpty: '内容为空',
-                  Unknown: '未知错误',
-                };
-                
-                return (
-                  <Tag color={colorMap[errType] || 'default'}>
-                    {labelMap[errType] || errType}
-                  </Tag>
-                );
-              }}
-            />
-            <Table.Column
-              title="错误信息"
-              dataIndex="AiErr"
-              key="AiErr"
-              width={250}
-              ellipsis={{ showTitle: true }}
-              render={(text) => (
-                <Text type="danger" ellipsis={{ tooltip: text }}>
-                  {text || '-'}
-                </Text>
-              )}
-            />
+            {statusModalStatus === '分析失败' && (
+              <>
+                <Table.Column
+                  title="错误类型"
+                  dataIndex="AiErrType"
+                  key="AiErrType"
+                  width={120}
+                  render={(errType) => {
+                    if (!errType) return '-';
+                    
+                    // 根据错误类型显示不同颜色的标签
+                    const colorMap: Record<string, string> = {
+                      MediaExpired: 'orange',
+                      ChannelBlocked: 'red',
+                      NoChannel: 'volcano',
+                      SensitiveContent: 'purple',
+                      ParseError: 'magenta',
+                      NetworkError: 'blue',
+                      ContentEmpty: 'default',
+                      Unknown: 'default',
+                    };
+                    
+                    const labelMap: Record<string, string> = {
+                      MediaExpired: '媒体过期',
+                      ChannelBlocked: '渠道封禁',
+                      NoChannel: '无可用渠道',
+                      SensitiveContent: '敏感内容',
+                      ParseError: '解析错误',
+                      NetworkError: '网络错误',
+                      ContentEmpty: '内容为空',
+                      Unknown: '未知错误',
+                    };
+                    
+                    return (
+                      <Tag color={colorMap[errType] || 'default'}>
+                        {labelMap[errType] || errType}
+                      </Tag>
+                    );
+                  }}
+                />
+                <Table.Column
+                  title="错误信息"
+                  dataIndex="AiErr"
+                  key="AiErr"
+                  width={250}
+                  ellipsis={{ showTitle: true }}
+                  render={(text) => (
+                    <Text type="danger" ellipsis={{ tooltip: text }}>
+                      {text || '-'}
+                    </Text>
+                  )}
+                />
+              </>
+            )}
             <Table.Column
               title="操作"
               key="action"
@@ -1450,12 +1576,12 @@ export default function AiAnalysisPage() {
           }}
         >
           <Pagination
-            current={failedNotesPage}
+            current={statusNotesPage}
             pageSize={20}
-            total={failedNotesTotal}
+            total={statusNotesTotal}
             showSizeChanger={false}
             showTotal={(total) => `共 ${total} 条记录`}
-            onChange={(page) => loadFailedNotes(page)}
+            onChange={(page) => loadStatusNotes(page)}
           />
         </div>
       </Modal>
@@ -1485,6 +1611,17 @@ export default function AiAnalysisPage() {
                 {mediaCheckResult.noteTitle}
               </Text>
             </Card>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={handleDownloadMedia}
+                loading={downloadingMedia}
+              >
+                一键下载资源
+              </Button>
+            </div>
 
             {/* 统计卡片 */}
             <Row gutter={16} style={{ marginBottom: 20 }}>
