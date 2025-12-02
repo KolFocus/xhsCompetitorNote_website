@@ -38,6 +38,7 @@ export interface NoteRecord extends Record<string, any> {
   XhsImages?: string | null;
   XhsVideo?: string | null;
   AiStatus?: string | null;
+  AiFilterMediaId?: string | null;
   CreatedAt?: string | null;
 }
 
@@ -72,8 +73,40 @@ const normalizeUrl = (value: string | null | undefined): string | null => {
   return isHttpUrl(trimmed) ? trimmed : null;
 };
 
+/**
+ * 从图片 URL 中提取纯 imageId（不含前缀）
+ * 规则与前端敏感检测保持一致：取路径最后一段，去掉 ! 及之后部分
+ */
+const extractImageIdFromUrl = (imageUrl: string): string | null => {
+  try {
+    const url = new URL(imageUrl);
+    const segments = url.pathname.split('/').filter(Boolean);
+
+    if (segments.length >= 2) {
+      const last = segments[segments.length - 1];
+      const bangIndex = last.indexOf('!');
+      const imageId = bangIndex >= 0 ? last.slice(0, bangIndex) : last;
+      return imageId;
+    }
+
+    const match = imageUrl.match(/\/([^/]+?)(?:!|$)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+};
+
 export const collectMediaUrls = (note: NoteRecord): string[] => {
   const urlSet = new Set<string>();
+
+  // 解析已标记为敏感的图片ID列表（用于过滤）
+  const filteredIds: string[] =
+    note.AiFilterMediaId && typeof note.AiFilterMediaId === 'string'
+      ? note.AiFilterMediaId
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : [];
 
   // 处理 XhsImages：逗号分隔的图片链接集合，只取前 12 个
   if (note.XhsImages && typeof note.XhsImages === 'string') {
@@ -84,6 +117,12 @@ export const collectMediaUrls = (note: NoteRecord): string[] => {
       .slice(0, 12); // 只取前 12 个链接
 
     for (const url of imageUrls) {
+      // 如果图片已在敏感列表中，则跳过，不再传给模型
+      const imageId = extractImageIdFromUrl(url);
+      if (imageId && filteredIds.includes(imageId)) {
+        continue;
+      }
+
       const normalized = normalizeUrl(url);
       if (normalized) {
         urlSet.add(normalized);
@@ -114,6 +153,15 @@ export const collectMediaUrlsSeparated = (note: NoteRecord): {
   const imageUrlSet = new Set<string>();
   const videoUrlSet = new Set<string>();
 
+  // 解析已标记为敏感的图片ID列表（用于过滤）
+  const filteredIds: string[] =
+    note.AiFilterMediaId && typeof note.AiFilterMediaId === 'string'
+      ? note.AiFilterMediaId
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : [];
+
   // 处理 XhsImages：逗号分隔的图片链接集合，只取前 12 个
   if (note.XhsImages && typeof note.XhsImages === 'string') {
     const imageUrls = note.XhsImages
@@ -123,6 +171,12 @@ export const collectMediaUrlsSeparated = (note: NoteRecord): {
       .slice(0, 12); // 只取前 12 个链接
 
     for (const url of imageUrls) {
+      // 如果图片已在敏感列表中，则跳过
+      const imageId = extractImageIdFromUrl(url);
+      if (imageId && filteredIds.includes(imageId)) {
+        continue;
+      }
+
       const normalized = normalizeUrl(url);
       if (normalized) {
         imageUrlSet.add(normalized);
