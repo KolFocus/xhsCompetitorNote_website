@@ -57,12 +57,29 @@ export default function BrandListPage() {
           countsMap.set(item.BrandId, item.NoteCount);
         });
 
-        const merged: BrandRecord[] = (brandsData.data as BrandResponseItem[]).map((brand) => ({
-          BrandId: brand.BrandId,
-          BrandIdKey: brand.BrandIdKey,
-          BrandName: brand.BrandName,
-          NoteCount: countsMap.get(brand.BrandId) || 0,
-        }));
+        const brandMap = new Map<string, BrandResponseItem>();
+        (brandsData.data as BrandResponseItem[]).forEach((brand) => {
+          if (!brand.BrandId || !brand.BrandName) return;
+          const key = `${brand.BrandId}__${brand.BrandName}`;
+          const existing = brandMap.get(key);
+          if (!existing || (!existing.BrandIdKey && brand.BrandIdKey)) {
+            brandMap.set(key, brand);
+          }
+        });
+
+        const merged: BrandRecord[] = Array.from(brandMap.values())
+          .map((brand) => ({
+            BrandId: brand.BrandId,
+            BrandIdKey: brand.BrandIdKey,
+            BrandName: brand.BrandName,
+            NoteCount: countsMap.get(brand.BrandId) || 0,
+          }))
+          .sort((a, b) => {
+            if (a.BrandId === b.BrandId) {
+              return a.BrandName.localeCompare(b.BrandName);
+            }
+            return a.BrandId.localeCompare(b.BrandId);
+          });
 
         setBrands(merged);
       } catch (error: any) {
