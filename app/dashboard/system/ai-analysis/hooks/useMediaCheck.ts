@@ -204,7 +204,7 @@ export function useMediaCheck() {
         return imageId;
       }
       
-      const match = imageUrl.match(/\/([^\/]+?)(?:!|$)/);
+      const match = url.pathname.match(/\/([^\/]+?)(?:!|$)/);
       return match ? match[1] : null;
     } catch {
       return null;
@@ -228,9 +228,12 @@ export function useMediaCheck() {
       return;
     }
 
+    console.log('song 01', JSON.stringify(historicalFilteredIds));
+
     // 过滤掉历史已标记的图片
     const imagesToCheck = validImages.filter((item: any) => {
       const imageId = extractImageId(item.url);
+      console.log('imageId ', imageId);
       return imageId && !historicalFilteredIds.includes(imageId);
     });
 

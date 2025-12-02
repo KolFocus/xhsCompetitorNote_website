@@ -89,7 +89,7 @@ const extractImageIdFromUrl = (imageUrl: string): string | null => {
       return imageId;
     }
 
-    const match = imageUrl.match(/\/([^/]+?)(?:!|$)/);
+    const match = url.pathname.match(/\/([^/]+?)(?:!|$)/);
     return match ? match[1] : null;
   } catch {
     return null;

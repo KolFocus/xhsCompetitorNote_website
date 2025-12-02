@@ -97,18 +97,25 @@ async function checkMediaUrlsWithLimit(
   const executing: Promise<void>[] = [];
 
   for (const url of urls) {
-    const promise = checkMediaUrl(url, type).then((result) => {
+    // 为当前 URL 创建一个检测任务
+    const p = (async () => {
+      const result = await checkMediaUrl(url, type);
       results.push(result);
+    })();
+
+    executing.push(p);
+
+    // 任务完成后，从 executing 列表中移除自身，确保并发计数准确
+    p.finally(() => {
+      const index = executing.indexOf(p);
+      if (index !== -1) {
+        executing.splice(index, 1);
+      }
     });
 
-    executing.push(promise);
-
+    // 如果当前执行中的任务数达到并发上限，则等待其中任意一个完成
     if (executing.length >= concurrency) {
       await Promise.race(executing);
-      executing.splice(
-        executing.findIndex((p) => p === promise),
-        1
-      );
     }
   }
 
@@ -118,6 +125,7 @@ async function checkMediaUrlsWithLimit(
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('song 01')
     const body = await request.json();
     const { noteId, noteTitle, images = [], videos = [] } = body;
 
@@ -148,6 +156,13 @@ export async function POST(request: NextRequest) {
       images.length > 0 ? checkMediaUrlsWithLimit(images, 'image', 5) : Promise.resolve([]),
       videos.length > 0 ? checkMediaUrlsWithLimit(videos, 'video', 5) : Promise.resolve([]),
     ]);
+
+    // 调试日志
+    console.log('check-media debug', {
+      imagesLength: images.length,
+      imageResultsLength: imageResults.length,
+      urls: images,
+    });    
 
     // 合并结果
     const allResults = [...imageResults, ...videoResults];

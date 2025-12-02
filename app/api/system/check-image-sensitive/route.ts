@@ -23,7 +23,7 @@ function extractImageId(imageUrl: string): string | null {
     }
     
     // 兜底：正则提取
-    const match = imageUrl.match(/\/([^\/]+?)(?:!|$)/);
+    const match = url.pathname.match(/\/([^\/]+?)(?:!|$)/);
     return match ? match[1] : null;
   } catch {
     return null;
