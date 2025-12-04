@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { parseKeywordFiltersFromParams, KEYWORD_SEARCH_COLUMNS } from '@/lib/utils/keywordSearch';
 
 export async function GET(
   request: NextRequest,
@@ -50,7 +51,11 @@ export async function GET(
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const search = searchParams.get('search');
-    const keyword = searchParams.get('keyword'); // 关键词搜索
+    const keywordFilters = parseKeywordFiltersFromParams(searchParams);
+    const hasKeywordFilters =
+      keywordFilters.mustInclude.length > 0 ||
+      keywordFilters.mustExclude.length > 0 ||
+      keywordFilters.optional.length > 0;
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
 
@@ -128,6 +133,36 @@ export async function GET(
       [brandId, brandName] = brandKey.split('#KF#');
     }
 
+    const matchesKeywordFilters = (note: any) => {
+      if (!hasKeywordFilters) {
+        return true;
+      }
+      const texts = KEYWORD_SEARCH_COLUMNS.map((column) =>
+        String(note[column] ?? '').toLowerCase(),
+      );
+      const includesTerm = (term: string) => {
+        const lower = term.toLowerCase();
+        if (!lower) {
+          return true;
+        }
+        return texts.some((text) => text.includes(lower));
+      };
+
+      if (keywordFilters.mustInclude.some((term) => !includesTerm(term))) {
+        return false;
+      }
+      if (keywordFilters.mustExclude.some((term) => includesTerm(term))) {
+        return false;
+      }
+      if (
+        keywordFilters.optional.length > 0 &&
+        !keywordFilters.optional.some((term) => includesTerm(term))
+      ) {
+        return false;
+      }
+      return true;
+    };
+
     // 处理数据格式
     const notes = (data || [])
       .map((item: any) => {
@@ -149,20 +184,8 @@ export async function GET(
             return null;
           }
         }
-        // 关键词搜索（搜索 6 个字段）
-        if (keyword && keyword.trim()) {
-          const keywordLower = keyword.toLowerCase();
-          const matchFound = 
-            note.Title?.toLowerCase().includes(keywordLower) ||
-            note.XhsTitle?.toLowerCase().includes(keywordLower) ||
-            note.XhsContent?.toLowerCase().includes(keywordLower) ||
-            note.AiSummary?.toLowerCase().includes(keywordLower) ||
-            note.AiContentType?.toLowerCase().includes(keywordLower) ||
-            note.AiRelatedProducts?.toLowerCase().includes(keywordLower);
-          
-          if (!matchFound) {
-            return null;
-          }
+        if (!matchesKeywordFilters(note)) {
+          return null;
         }
 
         return {

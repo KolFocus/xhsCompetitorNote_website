@@ -33,6 +33,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { queryPg } from '@/lib/postgres';
+import {
+  parseKeywordFiltersFromParams,
+  parseKeywordExpression,
+  KEYWORD_SEARCH_COLUMNS,
+  type KeywordFilters,
+} from '@/lib/utils/keywordSearch';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +62,7 @@ export async function GET(request: NextRequest) {
     const showMissingContent = searchParams.get('showMissingContent') === 'true'; // 只显示缺失内容
     const showNoteInvalid = searchParams.get('showNoteInvalid') === 'true'; // 只显示不可见笔记
     const keyword = searchParams.get('keyword'); // 关键词搜索
+    const keywordFilters = parseKeywordFiltersFromParams(searchParams);
 
     // 验证分页参数
     if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -87,6 +94,9 @@ export async function GET(request: NextRequest) {
       showMissingContent,
       showNoteInvalid,
       keyword,
+      keywordMust: keywordFilters.mustInclude,
+      keywordMustNot: keywordFilters.mustExclude,
+      keywordAny: keywordFilters.optional,
     });
   } catch (error: any) {
     console.error('Error in notes API:', error);
@@ -122,6 +132,9 @@ async function queryNotesWithPg(params: {
   showMissingContent: boolean;
   showNoteInvalid: boolean;
   keyword?: string | null; // 关键词搜索
+  keywordMust?: string[];
+  keywordMustNot?: string[];
+  keywordAny?: string[];
 }) {
   try {
     const {
@@ -142,6 +155,9 @@ async function queryNotesWithPg(params: {
       showMissingContent,
       showNoteInvalid,
       keyword,
+      keywordMust = [],
+      keywordMustNot = [],
+      keywordAny = [],
     } = params;
     
     const offset = (page - 1) * pageSize;
@@ -255,18 +271,57 @@ async function queryNotesWithPg(params: {
     }
     
     // 关键词搜索（搜索 6 个字段）
-    if (keyword && keyword.trim()) {
-      const searchPattern = `%${keyword.trim()}%`;
-      conditions.push(`(
-        n."Title" ILIKE $${paramIndex} OR
-        n."XhsTitle" ILIKE $${paramIndex} OR
-        n."XhsContent" ILIKE $${paramIndex} OR
-        n."AiSummary" ILIKE $${paramIndex} OR
-        n."AiContentType" ILIKE $${paramIndex} OR
-        n."AiRelatedProducts" ILIKE $${paramIndex}
-      )`);
-      queryParams.push(searchPattern);
-      paramIndex++;
+    let keywordFilters: KeywordFilters = {
+      mustInclude: keywordMust ?? [],
+      mustExclude: keywordMustNot ?? [],
+      optional: keywordAny ?? [],
+    };
+
+    if (
+      keywordFilters.mustInclude.length === 0 &&
+      keywordFilters.mustExclude.length === 0 &&
+      keywordFilters.optional.length === 0 &&
+      keyword &&
+      keyword.trim()
+    ) {
+      keywordFilters = parseKeywordExpression(keyword);
+    }
+
+    if (
+      keywordFilters.mustInclude.length > 0 ||
+      keywordFilters.mustExclude.length > 0 ||
+      keywordFilters.optional.length > 0
+    ) {
+      const keywordColumns = KEYWORD_SEARCH_COLUMNS.map((column) => `n."${column}"`);
+
+      const buildPositiveClause = (term: string) => {
+        const placeholder = `$${paramIndex}`;
+        const clause = `(${keywordColumns.map((col) => `${col} ILIKE ${placeholder}`).join(' OR ')})`;
+        queryParams.push(`%${term}%`);
+        paramIndex++;
+        return clause;
+      };
+
+      const buildNegativeClause = (term: string) => {
+        const placeholder = `$${paramIndex}`;
+        const clause = `(${keywordColumns.map((col) => `${col} NOT ILIKE ${placeholder}`).join(' AND ')})`;
+        queryParams.push(`%${term}%`);
+        paramIndex++;
+        return clause;
+      };
+
+      if (keywordFilters.optional.length > 0) {
+        const optionalClauses = keywordFilters.optional.map((term) => buildPositiveClause(term));
+        conditions.push(`(${optionalClauses.join(' OR ')})`);
+      }
+
+      keywordFilters.mustInclude.forEach((term) => {
+        conditions.push(buildPositiveClause(term));
+      });
+
+      keywordFilters.mustExclude.forEach((term) => {
+        conditions.push(buildNegativeClause(term));
+      });
     }
     
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -393,6 +448,9 @@ async function handleNotesQuery(params: {
   showMissingContent: boolean;
   showNoteInvalid: boolean;
   keyword?: string | null; // 关键词搜索
+  keywordMust?: string[];
+  keywordMustNot?: string[];
+  keywordAny?: string[];
 }) {
   const {
     tagSetId,
@@ -412,6 +470,9 @@ async function handleNotesQuery(params: {
     showMissingContent,
     showNoteInvalid,
     keyword,
+    keywordMust,
+    keywordMustNot,
+    keywordAny,
   } = params;
 
   // 使用统一的 PG 查询函数
@@ -433,6 +494,9 @@ async function handleNotesQuery(params: {
     showMissingContent,
     showNoteInvalid,
     keyword,
+    keywordMust,
+    keywordMustNot,
+    keywordAny,
   });
 
   // 处理结果

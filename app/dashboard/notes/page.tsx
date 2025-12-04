@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /**
  * 全部笔记页面
  */
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useMemo } from 'react';
 import {
   Card,
   Row,
@@ -46,6 +46,7 @@ import type { Dayjs } from 'dayjs';
 import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
 
 dayjs.locale('zh-cn');
 
@@ -193,12 +194,30 @@ function NotesPageContent() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   // 统计数据
-  const [stats, setStats] = useState<{
+const [stats, setStats] = useState<{
     totalNotes: number;
     totalBrands: number;
     totalBloggers: number;
     missingContent: number;
   } | null>(null);
+
+  const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
+  const highlightTerms = useMemo(() => {
+    const terms = new Set<string>();
+    parsedKeyword.mustInclude.forEach((term) => terms.add(term));
+    parsedKeyword.optional.forEach((term) => terms.add(term));
+    return Array.from(terms).filter((term) => term.length > 0);
+  }, [parsedKeyword]);
+
+  const appendKeywordFilters = (params: URLSearchParams) => {
+    if (!keyword || !keyword.trim()) {
+      return;
+    }
+    params.append('keyword', keyword.trim());
+    parsedKeyword.mustInclude.forEach((term) => params.append('keywordMust', term));
+    parsedKeyword.mustExclude.forEach((term) => params.append('keywordMustNot', term));
+    parsedKeyword.optional.forEach((term) => params.append('keywordAny', term));
+  };
 
   // 加载品牌和博主列表
   useEffect(() => {
@@ -261,6 +280,8 @@ function NotesPageContent() {
         params.append('endDate', dateRange[1].format('YYYY-MM-DD'));
       }
 
+      appendKeywordFilters(params);
+
       const response = await fetch(`/api/notes/stats?${params.toString()}`);
       const data = await response.json();
 
@@ -281,9 +302,7 @@ function NotesPageContent() {
       pageSize: currentPageSize.toString(),
     });
 
-    if (keyword && keyword.trim()) {
-      params.append('keyword', keyword.trim());
-    }
+    appendKeywordFilters(params);
     if (selectedBrand) {
       params.append('brandKey', selectedBrand);
     }
@@ -549,19 +568,32 @@ function NotesPageContent() {
   };
 
   // 关键词高亮函数
-  const highlightKeyword = (text: string | null | undefined, keyword: string): React.ReactNode => {
-    if (!text || !keyword || !keyword.trim()) {
-      return text || '';
+  const highlightKeyword = (text: string | null | undefined): React.ReactNode => {
+    if (!text) {
+      return '';
     }
 
-    const searchTerm = keyword.trim();
-    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    if (!highlightTerms.length) {
+      return text;
+    }
+
+    const escapedTerms = highlightTerms
+      .map((term) => term.trim())
+      .filter(Boolean)
+      .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+    if (!escapedTerms.length) {
+      return text;
+    }
+
+    const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+    const testRegex = new RegExp(`^(${escapedTerms.join('|')})$`, 'i');
     const parts = text.split(regex);
 
     return (
       <>
         {parts.map((part, index) => {
-          if (regex.test(part)) {
+          if (testRegex.test(part)) {
             return (
               <span
                 key={index}
@@ -702,7 +734,7 @@ function NotesPageContent() {
                   {/* 标题和标签 */}
                   <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                     <div style={{ marginBottom: 8, fontWeight: 500 }}>
-                      {highlightKeyword(record.Title, keyword) || '无标题'}
+                      {highlightKeyword(record.Title) || '无标题'}
                     </div>
                   </Tooltip>
                   <Space size="small" wrap>
@@ -838,7 +870,7 @@ function NotesPageContent() {
                     )}
                     <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                       <div style={{ fontWeight: 400, flex: 1 }}>
-                        {highlightKeyword(text, keyword) || '无标题'}
+                        {highlightKeyword(text) || '无标题'}
                       </div>
                     </Tooltip>
                   </div>
@@ -892,7 +924,7 @@ function NotesPageContent() {
                         </Text>
                         <Tooltip title={record.AiContentType}>
                           <Text style={{ fontSize: 16 }}>
-                            {highlightKeyword(truncateText(record.AiContentType, 8), keyword)}
+                            {highlightKeyword(truncateText(record.AiContentType, 8))}
                           </Text>
                         </Tooltip>
                       </div>
@@ -903,7 +935,7 @@ function NotesPageContent() {
                           相关产品：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {highlightKeyword(record.AiRelatedProducts, keyword)}
+                          {highlightKeyword(record.AiRelatedProducts)}
                         </Text>
                       </div>
                     )}
@@ -913,7 +945,7 @@ function NotesPageContent() {
                           内容总结：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {highlightKeyword(record.AiSummary, keyword)}
+                          {highlightKeyword(record.AiSummary)}
                         </Text>
                       </div>
                     )}
@@ -1211,8 +1243,23 @@ function NotesPageContent() {
           </Col>
 
           <Col xs={24} sm={12} md={6}>
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
               <strong>关键词：</strong>
+              <Tooltip
+                title={
+                  <div>
+                    <div>搜索语法：</div>
+                    <div>+词：结果中必须包含该关键词</div>
+                    <div>-词：结果中不能出现该关键词</div>
+                    <div>A|B|C 或 A B C：任意命中一个即可</div>
+                    <div style={{ marginTop: 4 }}>
+                      示例：C +A D -B ⇒ 至少包含 C 或 D，必须包含 A，且不能包含 B
+                    </div>
+                  </div>
+                }
+              >
+                <span style={{ cursor: 'pointer', color: '#999', fontSize: 12 }}>语法说明</span>
+              </Tooltip>
             </div>
             <Input
               placeholder="搜索标题、内容、AI分析结果等"

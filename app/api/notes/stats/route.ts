@@ -22,6 +22,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { parseKeywordFiltersFromParams } from '@/lib/utils/keywordSearch';
+import { applyKeywordFiltersToSupabaseQuery } from '@/app/api/notes/keywordFilterHelpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,7 @@ export async function GET(request: NextRequest) {
     const bloggerId = searchParams.get('bloggerId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const keywordFilters = parseKeywordFiltersFromParams(searchParams);
 
     // 解析 brandKey
     let brandId: string | null = null;
@@ -51,6 +54,7 @@ export async function GET(request: NextRequest) {
       if (bloggerId) query = query.eq('BloggerId', bloggerId);
       if (startDate) query = query.gte('PubDate', startDate);
       if (endDate) query = query.lte('PubDate', endDate);
+      query = applyKeywordFiltersToSupabaseQuery(query, keywordFilters);
       return query;
     };
 

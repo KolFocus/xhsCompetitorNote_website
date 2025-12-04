@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /**
  * 报告详情页面
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   Row,
@@ -54,6 +54,7 @@ import CreateReportModal from '@/components/reports/CreateReportModal';
 import AddNotesModal from '@/components/reports/AddNotesModal';
 import BloggerMatrixAnalysis from '@/components/reports/BloggerMatrixAnalysis';
 import TagAnalysis from '@/components/reports/TagAnalysis';
+import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
 import { useRouter } from 'next/navigation';
 
 dayjs.locale('zh-cn');
@@ -202,6 +203,22 @@ export default function ReportsPage() {
   const [bloggerId, setBloggerId] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
 
+  const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
+  const highlightTerms = useMemo(() => {
+    const terms = new Set<string>();
+    parsedKeyword.mustInclude.forEach((term) => terms.add(term));
+    parsedKeyword.optional.forEach((term) => terms.add(term));
+    return Array.from(terms).filter(Boolean);
+  }, [parsedKeyword]);
+
+  const appendKeywordFilters = (params: URLSearchParams) => {
+    if (!keyword || !keyword.trim()) return;
+    params.set('keyword', keyword.trim());
+    parsedKeyword.mustInclude.forEach((term) => params.append('keywordMust', term));
+    parsedKeyword.mustExclude.forEach((term) => params.append('keywordMustNot', term));
+    parsedKeyword.optional.forEach((term) => params.append('keywordAny', term));
+  };
+
   // 排序状态（默认：publishTime 降序）
   const [sortField, setSortField] = useState<string>('publishTime');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -287,7 +304,7 @@ export default function ReportsPage() {
         pageSize: String(pageSizeValue),
         status: activeTab,
       });
-      if (keyword && keyword.trim()) params.set('keyword', keyword.trim());
+      appendKeywordFilters(params);
       if (brandId) params.set('brandKey', brandId);
       if (bloggerId) params.set('bloggerId', bloggerId);
       if (dateRange) {
@@ -457,19 +474,32 @@ export default function ReportsPage() {
   };
 
   // 关键词高亮函数
-  const highlightKeyword = (text: string | null | undefined, searchKeyword: string): React.ReactNode => {
-    if (!text || !searchKeyword || !searchKeyword.trim()) {
-      return text || '';
+  const highlightKeyword = (text: string | null | undefined): React.ReactNode => {
+    if (!text) {
+      return '';
     }
 
-    const searchTerm = searchKeyword.trim();
-    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    if (!highlightTerms.length) {
+      return text;
+    }
+
+    const escapedTerms = highlightTerms
+      .map((term) => term.trim())
+      .filter(Boolean)
+      .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+    if (!escapedTerms.length) {
+      return text;
+    }
+
+    const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+    const testRegex = new RegExp(`^(${escapedTerms.join('|')})$`, 'i');
     const parts = text.split(regex);
 
     return (
       <>
         {parts.map((part, index) => {
-          if (regex.test(part)) {
+          if (testRegex.test(part)) {
             return (
               <span
                 key={index}
@@ -616,7 +646,7 @@ export default function ReportsPage() {
                   {/* 标题和标签 */}
                   <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                     <div style={{ marginBottom: 8, fontWeight: 500 }}>
-                      {highlightKeyword(record.title, keyword) || '无标题'}
+                      {highlightKeyword(record.title) || '无标题'}
                     </div>
                   </Tooltip>
                   <Space size="small" wrap>
@@ -751,7 +781,7 @@ export default function ReportsPage() {
                     )}
                     <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                       <div style={{ fontWeight: 400, flex: 1 }}>
-                        {highlightKeyword(text, keyword) || '无标题'}
+                        {highlightKeyword(text) || '无标题'}
                       </div>
                     </Tooltip>
                   </div>
@@ -805,7 +835,7 @@ export default function ReportsPage() {
                         </Text>
                         <Tooltip title={record.aiContentType}>
                           <Text style={{ fontSize: 16 }}>
-                            {highlightKeyword(truncateText(record.aiContentType, 8), keyword)}
+                            {highlightKeyword(truncateText(record.aiContentType, 8))}
                           </Text>
                         </Tooltip>
                       </div>
@@ -816,7 +846,7 @@ export default function ReportsPage() {
                           相关产品：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {highlightKeyword(record.aiRelatedProducts, keyword)}
+                          {highlightKeyword(record.aiRelatedProducts)}
                         </Text>
                       </div>
                     )}
@@ -826,7 +856,7 @@ export default function ReportsPage() {
                           内容总结：
                         </Text>
                         <Text style={{ fontSize: 16 }}>
-                          {highlightKeyword(record.aiSummary, keyword)}
+                          {highlightKeyword(record.aiSummary)}
                         </Text>
                       </div>
                     )}
@@ -1281,6 +1311,24 @@ export default function ReportsPage() {
                 />
               </Col>
               <Col>
+                <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <strong>关键词：</strong>
+                  <Tooltip
+                    title={
+                      <div>
+                        <div>搜索语法：</div>
+                        <div>+词：结果中必须包含该关键词</div>
+                        <div>-词：结果中不能出现该关键词</div>
+                        <div>A|B|C 或 A B C：任意命中一个即可</div>
+                        <div style={{ marginTop: 4 }}>
+                          示例：C +A D -B ⇒ 至少包含 C 或 D，必须包含 A，且不能包含 B
+                        </div>
+                      </div>
+                    }
+                  >
+                    <span style={{ cursor: 'pointer', color: '#999', fontSize: 12 }}>语法说明</span>
+                  </Tooltip>
+                </div>
                 <Input
                   placeholder="搜索标题、内容、AI分析结果等"
                   allowClear

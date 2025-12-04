@@ -18,6 +18,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { parseKeywordFiltersFromParams } from '@/lib/utils/keywordSearch';
+import { applyKeywordFiltersToSupabaseQuery } from '@/app/api/notes/keywordFilterHelpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate');
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
-    const keyword = searchParams.get('keyword');
+    const keywordFilters = parseKeywordFiltersFromParams(searchParams);
 
     // 验证分页参数
     if (page < 1 || pageSize < 1 || pageSize > 100) {
@@ -72,18 +74,7 @@ export async function GET(request: NextRequest) {
       query = query.lte('PubDate', endDate);
     }
     
-    // 关键词搜索（搜索 6 个字段）
-    if (keyword && keyword.trim()) {
-      const searchPattern = `%${keyword.trim()}%`;
-      query = query.or(
-        `Title.ilike.${searchPattern},` +
-        `XhsTitle.ilike.${searchPattern},` +
-        `XhsContent.ilike.${searchPattern},` +
-        `AiSummary.ilike.${searchPattern},` +
-        `AiContentType.ilike.${searchPattern},` +
-        `AiRelatedProducts.ilike.${searchPattern}`
-      );
-    }
+    query = applyKeywordFiltersToSupabaseQuery(query, keywordFilters);
 
     // 应用排序
     const ascending = order === 'asc';

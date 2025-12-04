@@ -37,6 +37,7 @@ import type { Dayjs } from 'dayjs';
 import { useSearchParams } from 'next/navigation';
 
 import type { BulkTaggingResult, TagDTO, TagSetDTO } from '@/lib/types';
+import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
@@ -163,6 +164,24 @@ const NoteTaggingPage: React.FC = () => {
   const [showUnanalyzed, setShowUnanalyzed] = useState(false);
   const [showMissingContent, setShowMissingContent] = useState(false);
 
+  const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
+  const highlightTerms = useMemo(() => {
+    const terms = new Set<string>();
+    parsedKeyword.mustInclude.forEach((term) => terms.add(term));
+    parsedKeyword.optional.forEach((term) => terms.add(term));
+    return Array.from(terms).filter(Boolean);
+  }, [parsedKeyword]);
+
+  const appendKeywordFilters = (params: URLSearchParams) => {
+    if (!keyword || !keyword.trim()) {
+      return;
+    }
+    params.set('keyword', keyword.trim());
+    parsedKeyword.mustInclude.forEach((term) => params.append('keywordMust', term));
+    parsedKeyword.mustExclude.forEach((term) => params.append('keywordMustNot', term));
+    parsedKeyword.optional.forEach((term) => params.append('keywordAny', term));
+  };
+
   const fetchTagSets = async () => {
     try {
       setLoading(true);
@@ -265,9 +284,7 @@ const NoteTaggingPage: React.FC = () => {
       });
 
       // 添加筛选参数
-      if (keyword && keyword.trim()) {
-        params.set('keyword', keyword.trim());
-      }
+      appendKeywordFilters(params);
       if (selectedReportId) {
         params.set('reportId', selectedReportId);
       }
@@ -552,19 +569,32 @@ const NoteTaggingPage: React.FC = () => {
   };
 
   // 关键词高亮函数
-  const highlightKeyword = (text: string | null | undefined, searchKeyword: string): React.ReactNode => {
-    if (!text || !searchKeyword || !searchKeyword.trim()) {
-      return text || '';
+  const highlightKeyword = (text: string | null | undefined): React.ReactNode => {
+    if (!text) {
+      return '';
     }
 
-    const searchTerm = searchKeyword.trim();
-    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    if (!highlightTerms.length) {
+      return text;
+    }
+
+    const escapedTerms = highlightTerms
+      .map((term) => term.trim())
+      .filter(Boolean)
+      .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+    if (!escapedTerms.length) {
+      return text;
+    }
+
+    const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+    const testRegex = new RegExp(`^(${escapedTerms.join('|')})$`, 'i');
     const parts = text.split(regex);
 
     return (
       <>
         {parts.map((part, index) => {
-          if (regex.test(part)) {
+          if (testRegex.test(part)) {
             return (
               <span
                 key={index}
@@ -658,7 +688,7 @@ const NoteTaggingPage: React.FC = () => {
                 placement="topLeft"
               >
                 <Title level={5} style={{ margin: 0, flex: 1, fontSize: 14 }}>
-                  {highlightKeyword(value, keyword) || '未命名笔记'}
+                  {highlightKeyword(value) || '未命名笔记'}
                 </Title>
               </Tooltip>
               {record.XhsNoteLink && (
@@ -782,20 +812,20 @@ const NoteTaggingPage: React.FC = () => {
                 <div>
                   <Text strong style={{ fontSize: 16 }}>内容场景：</Text>
                   <Tooltip title={record.AiContentType}>
-                    <Text style={{ fontSize: 16 }}>{highlightKeyword(truncateText(record.AiContentType, 8), keyword)}</Text>
+                    <Text style={{ fontSize: 16 }}>{highlightKeyword(truncateText(record.AiContentType, 8))}</Text>
                   </Tooltip>
                 </div>
               )}
               {record.AiRelatedProducts && (
                 <div>
                   <Text strong style={{ fontSize: 16 }}>相关产品：</Text>
-                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiRelatedProducts, keyword)}</Text>
+                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiRelatedProducts)}</Text>
                 </div>
               )}
               {record.AiSummary && (
                 <div>
                   <Text strong style={{ fontSize: 16 }}>内容总结：</Text>
-                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiSummary, keyword)}</Text>
+                  <Text style={{ fontSize: 16 }}>{highlightKeyword(record.AiSummary)}</Text>
                 </div>
               )}
             </Space>
@@ -974,8 +1004,23 @@ const NoteTaggingPage: React.FC = () => {
             </Col>
 
             <Col xs={24} sm={12} md={6}>
-              <div style={{ marginBottom: 8 }}>
+              <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <strong>关键词：</strong>
+                <Tooltip
+                  title={
+                    <div>
+                      <div>搜索语法：</div>
+                      <div>+词：结果中必须包含该关键词</div>
+                      <div>-词：结果中不能出现该关键词</div>
+                      <div>A|B|C 或 A B C：任意命中一个即可</div>
+                      <div style={{ marginTop: 4 }}>
+                        示例：C +A D -B ⇒ 至少包含 C 或 D，必须包含 A，且不能包含 B
+                      </div>
+                    </div>
+                  }
+                >
+                  <span style={{ cursor: 'pointer', color: '#999', fontSize: 12 }}>语法说明</span>
+                </Tooltip>
               </div>
               <Input
                 placeholder="搜索标题、内容、AI分析结果等"
