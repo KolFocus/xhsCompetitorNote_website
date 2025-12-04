@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /**
  * 全部笔记页面
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import {
   Card,
   Row,
@@ -137,7 +137,7 @@ interface NotesResponse {
   error?: string;
 }
 
-export default function NotesPage() {
+function NotesPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -1333,5 +1333,13 @@ export default function NotesPage() {
         }}
       />
     </div>
+  );
+}
+
+export default function NotesPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <NotesPageContent />
+    </Suspense>
   );
 }

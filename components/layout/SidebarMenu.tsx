@@ -4,7 +4,7 @@
  * 侧边栏菜单组件
  * 支持二级菜单和收起功能
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
@@ -14,6 +14,8 @@ import type { MenuItem } from '@/lib/types';
 interface SidebarMenuProps {
   collapsed: boolean;
 }
+
+type AntdMenuItem = NonNullable<MenuProps['items']>[number];
 
 const SidebarMenu: React.FC<SidebarMenuProps> = ({ collapsed }) => {
   const pathname = usePathname();
@@ -31,25 +33,21 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ collapsed }) => {
   /**
    * 将 MenuItem 转换为 Ant Design Menu 的 items 格式
    */
-  const convertToMenuItems = (items: MenuItem[]): MenuProps['items'] => {
+  const convertToMenuItems = useCallback((items: MenuItem[]): AntdMenuItem[] => {
     return items.map((item) => {
-      const menuItem: MenuProps['items'][0] = {
+      const children =
+        item.children && item.children.length > 0 ? convertToMenuItems(item.children) : undefined;
+
+      return {
         key: item.key,
         icon: item.icon,
         label: item.label,
-        onClick: item.path ? () => router.push(item.path) : undefined,
-      };
-
-      // 如果有子菜单，递归转换
-      if (item.children && item.children.length > 0) {
-        menuItem.children = convertToMenuItems(item.children);
-      }
-
-      return menuItem;
+        children,
+      } as AntdMenuItem;
     });
-  };
+  }, []);
 
-  const menuItemsData = useMemo(() => convertToMenuItems(menuItems), [collapsed, router]);
+  const menuItemsData = useMemo(() => convertToMenuItems(menuItems), [convertToMenuItems]);
 
   /**
    * 菜单点击处理

@@ -34,6 +34,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryPg } from '@/lib/postgres';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // 获取查询参数
