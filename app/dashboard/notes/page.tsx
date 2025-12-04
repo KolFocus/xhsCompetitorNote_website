@@ -700,7 +700,7 @@ export default function NotesPage() {
                   </div>
 
                   {/* 标题和标签 */}
-                  <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                  <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                     <div style={{ marginBottom: 8, fontWeight: 500 }}>
                       {highlightKeyword(record.Title, keyword) || '无标题'}
                     </div>
@@ -814,8 +814,9 @@ export default function NotesPage() {
                     {hasAiData ? (
                       <Tooltip
                         title={aiTooltipContent}
-                        overlayStyle={{ maxWidth: 520 }}
-                        overlayInnerStyle={{ maxHeight: 450, overflow: 'auto' }}
+                        styles={{ 
+                          root: { maxWidth: 520, maxHeight: 450, overflow: 'auto' }
+                        }}
                       >
                         <RobotOutlined
                           style={{
@@ -835,7 +836,7 @@ export default function NotesPage() {
                         }}
                       />
                     )}
-                    <Tooltip title={tooltipContent} overlayStyle={{ maxWidth: 400, maxHeight: 300 }}>
+                    <Tooltip title={tooltipContent} styles={{ root: { maxWidth: 400, maxHeight: 300 } }}>
                       <div style={{ fontWeight: 400, flex: 1 }}>
                         {highlightKeyword(text, keyword) || '无标题'}
                       </div>

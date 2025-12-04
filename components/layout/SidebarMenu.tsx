@@ -4,8 +4,9 @@
  * 侧边栏菜单组件
  * 支持二级菜单和收起功能
  */
-import React, { useState, useEffect } from 'react';
-import { Menu, Tooltip } from 'antd';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Menu } from 'antd';
+import type { MenuProps } from 'antd';
 import { usePathname, useRouter } from 'next/navigation';
 import { menuItems, getSelectedKeys, getOpenKeys } from '@/lib/utils/menuConfig';
 import type { MenuItem } from '@/lib/types';
@@ -28,60 +29,32 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ collapsed }) => {
   }, [pathname]);
 
   /**
-   * 渲染菜单项
+   * 将 MenuItem 转换为 Ant Design Menu 的 items 格式
    */
-  const renderMenuItem = (item: MenuItem): React.ReactNode => {
-    const menuItem = (
-      <Menu.Item key={item.key} icon={item.icon} onClick={() => item.path && router.push(item.path)}>
-        {!collapsed && item.label}
-      </Menu.Item>
-    );
+  const convertToMenuItems = (items: MenuItem[]): MenuProps['items'] => {
+    return items.map((item) => {
+      const menuItem: MenuProps['items'][0] = {
+        key: item.key,
+        icon: item.icon,
+        label: item.label,
+        onClick: item.path ? () => router.push(item.path) : undefined,
+      };
 
-    // 收起时显示Tooltip
-    if (collapsed) {
-      return (
-        <Tooltip title={item.label} placement="right" key={item.key}>
-          {menuItem}
-        </Tooltip>
-      );
-    }
+      // 如果有子菜单，递归转换
+      if (item.children && item.children.length > 0) {
+        menuItem.children = convertToMenuItems(item.children);
+      }
 
-    return menuItem;
+      return menuItem;
+    });
   };
 
-  /**
-   * 渲染子菜单
-   */
-  const renderSubMenu = (item: MenuItem): React.ReactNode => {
-    if (!item.children || item.children.length === 0) {
-      return renderMenuItem(item);
-    }
-
-    const subMenuItems = item.children.map((child) => renderMenuItem(child));
-
-    if (collapsed) {
-      // 收起时，有二级菜单的项目显示为带Tooltip的MenuItem
-      // 点击后通过Popover显示子菜单（antd Menu会自动处理）
-      return (
-        <Tooltip title={item.label} placement="right" key={item.key}>
-          <Menu.SubMenu key={item.key} icon={item.icon} title={item.label} popupClassName="collapsed-submenu">
-            {subMenuItems}
-          </Menu.SubMenu>
-        </Tooltip>
-      );
-    }
-
-    return (
-      <Menu.SubMenu key={item.key} icon={item.icon} title={item.label}>
-        {subMenuItems}
-      </Menu.SubMenu>
-    );
-  };
+  const menuItemsData = useMemo(() => convertToMenuItems(menuItems), [collapsed, router]);
 
   /**
    * 菜单点击处理
    */
-  const handleMenuClick = ({ key }: { key: string }) => {
+  const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
     // 查找菜单项并跳转
     const findItem = (items: MenuItem[]): MenuItem | null => {
       for (const item of items) {
@@ -118,11 +91,8 @@ const SidebarMenu: React.FC<SidebarMenuProps> = ({ collapsed }) => {
       onClick={handleMenuClick}
       onOpenChange={handleOpenChange}
       style={{ height: '100%', borderRight: 0 }}
-    >
-      {menuItems.map((item) => (
-        item.children ? renderSubMenu(item) : renderMenuItem(item)
-      ))}
-    </Menu>
+      items={menuItemsData}
+    />
   );
 };
 

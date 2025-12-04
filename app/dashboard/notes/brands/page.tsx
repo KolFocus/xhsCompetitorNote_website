@@ -103,7 +103,6 @@ export default function BrandListPage() {
         brand.BrandName.toLowerCase().includes(keyword) ||
         brand.BrandId.toLowerCase().includes(keyword),
     );
-    console.log('过滤后的品牌列表:', result);
     return result;
   }, [brands, searchValue]);
 
@@ -189,7 +188,7 @@ export default function BrandListPage() {
           loading={loading}
           columns={columns}
           dataSource={filteredBrands}
-          pagination={{ pageSize: 20 }}
+          pagination={{ pageSize: 10 }}
         />
       </Card>
     </div>
