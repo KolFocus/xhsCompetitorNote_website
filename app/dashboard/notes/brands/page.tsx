@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Table, Button, Space, Typography, message, Input, Tooltip } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useRouter } from 'next/navigation';
 import { 
@@ -41,77 +42,83 @@ export default function BrandListPage() {
   const [loading, setLoading] = useState(false);
   const [searchValue, setSearchValue] = useState('');
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [brandsRes, summaryRes] = await Promise.all([
-          fetch('/api/allBrands'),
-          fetch('/api/notes/brand-summary'),
-        ]);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [brandsRes, summaryRes] = await Promise.all([
+        fetch('/api/allBrands'),
+        fetch('/api/notes/brand-summary'),
+      ]);
 
-        const brandsData = await brandsRes.json();
-        const summaryData = await summaryRes.json();
+      const brandsData = await brandsRes.json();
+      const summaryData = await summaryRes.json();
 
-        if (!brandsData.success) {
-          throw new Error(brandsData.error || '加载品牌列表失败');
+      if (!brandsData.success) {
+        throw new Error(brandsData.error || '加载品牌列表失败');
+      }
+      if (!summaryData.success) {
+        throw new Error(summaryData.error || '加载品牌统计失败');
+      }
+
+      const countsMap = new Map<string, number>();
+      (summaryData.data as BrandSummary[]).forEach((item) => {
+        // 使用 BrandId__BrandName 作为 key，确保每个品牌（BrandId + BrandName 组合）都能正确获取到对应的 NoteCount
+        const key = `${item.BrandId}__${item.BrandName}`;
+        countsMap.set(key, item.NoteCount);
+      });
+
+      // 解析和处理 DateCoverage
+      const processedBrands = (brandsData.data as BrandResponseItem[]).map((brand) => {
+        const parsed = parseDateCoverage(brand.DateCoverage);
+        return {
+          ...brand,
+          DateCoverage: parsed.coverage,
+          _hasDateCoverageError: parsed.hasError,
+        };
+      });
+
+      const brandMap = new Map<string, BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean }>();
+      processedBrands.forEach((brand) => {
+        if (!brand.BrandId || !brand.BrandName) return;
+        const key = `${brand.BrandId}__${brand.BrandName}`;
+        const existing = brandMap.get(key);
+        if (!existing || (!existing.BrandIdKey && brand.BrandIdKey)) {
+          brandMap.set(key, brand as BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean });
         }
-        if (!summaryData.success) {
-          throw new Error(summaryData.error || '加载品牌统计失败');
-        }
+      });
 
-        const countsMap = new Map<string, number>();
-        (summaryData.data as BrandSummary[]).forEach((item) => {
-          countsMap.set(item.BrandId, item.NoteCount);
-        });
-
-        // 解析和处理 DateCoverage
-        const processedBrands = (brandsData.data as BrandResponseItem[]).map((brand) => {
-          const parsed = parseDateCoverage(brand.DateCoverage);
+      const merged: BrandRecord[] = Array.from(brandMap.values())
+        .map((brand) => {
+          // 使用 BrandId__BrandName 作为 key 来获取对应的 NoteCount
+          const countKey = `${brand.BrandId}__${brand.BrandName}`;
           return {
-            ...brand,
-            DateCoverage: parsed.coverage,
-            _hasDateCoverageError: parsed.hasError,
-          };
-        });
-
-        const brandMap = new Map<string, BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean }>();
-        processedBrands.forEach((brand) => {
-          if (!brand.BrandId || !brand.BrandName) return;
-          const key = `${brand.BrandId}__${brand.BrandName}`;
-          const existing = brandMap.get(key);
-          if (!existing || (!existing.BrandIdKey && brand.BrandIdKey)) {
-            brandMap.set(key, brand as BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean });
-          }
-        });
-
-        const merged: BrandRecord[] = Array.from(brandMap.values())
-          .map((brand) => ({
             BrandId: brand.BrandId,
             BrandIdKey: brand.BrandIdKey,
             BrandName: brand.BrandName,
-            NoteCount: countsMap.get(brand.BrandId) || 0,
+            NoteCount: countsMap.get(countKey) || 0,
             DateCoverage: brand.DateCoverage,
             _hasDateCoverageError: brand._hasDateCoverageError,
-          }))
-          .sort((a, b) => {
-            if (a.BrandId === b.BrandId) {
-              return a.BrandName.localeCompare(b.BrandName);
-            }
-            return a.BrandId.localeCompare(b.BrandId);
-          });
+          };
+        })
+        .sort((a, b) => {
+          if (a.BrandId === b.BrandId) {
+            return a.BrandName.localeCompare(b.BrandName);
+          }
+          return a.BrandId.localeCompare(b.BrandId);
+        });
 
-        setBrands(merged);
-      } catch (error: any) {
-        console.error('Load brand list failed:', error);
-        message.error(error?.message || '加载品牌列表失败');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadData();
+      setBrands(merged);
+    } catch (error: any) {
+      console.error('Load brand list failed:', error);
+      message.error(error?.message || '加载品牌列表失败');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredBrands = useMemo(() => {
     if (!searchValue.trim()) {
@@ -203,7 +210,7 @@ export default function BrandListPage() {
       title: '品牌ID',
       dataIndex: 'BrandId',
       key: 'brandId',
-      render: (text) => <Text copyable>{text}</Text>,
+      render: (text) => <Text>{text}</Text>,
     },
     {
       title: '笔记总数',
@@ -250,14 +257,23 @@ export default function BrandListPage() {
       </Title>
 
       <Card style={{ marginBottom: 16 }}>
-        <Search
-          placeholder="搜索品牌名称或ID"
-          allowClear
-          value={searchValue}
-          onChange={(e) => setSearchValue(e.target.value)}
-          onSearch={(value) => setSearchValue(value)}
-          style={{ maxWidth: 360 }}
-        />
+        <Space>
+          <Search
+            placeholder="搜索品牌名称或ID"
+            allowClear
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
+            onSearch={(value) => setSearchValue(value)}
+            style={{ maxWidth: 360 }}
+          />
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={loadData}
+            loading={loading}
+          >
+            刷新
+          </Button>
+        </Space>
       </Card>
 
       <Card>
