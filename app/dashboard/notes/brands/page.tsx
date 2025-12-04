@@ -1,9 +1,14 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Table, Button, Space, Typography, message, Input } from 'antd';
+import { Card, Table, Button, Space, Typography, message, Input, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useRouter } from 'next/navigation';
+import { 
+  type DateRange, 
+  parseDateCoverage, 
+  formatDateRange 
+} from '@/lib/utils/dateCoverage';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
@@ -13,6 +18,8 @@ interface BrandRecord {
   BrandIdKey?: string | null;
   BrandName: string;
   NoteCount: number;
+  DateCoverage?: DateRange[] | null;
+  _hasDateCoverageError?: boolean; // 标记 DateCoverage 是否存在但解析失败
 }
 
 interface BrandSummary {
@@ -25,6 +32,7 @@ interface BrandResponseItem {
   BrandId: string;
   BrandIdKey: string | null;
   BrandName: string;
+  DateCoverage?: any; // 可能是 JSON 字符串、数组或 null
 }
 
 export default function BrandListPage() {
@@ -57,13 +65,23 @@ export default function BrandListPage() {
           countsMap.set(item.BrandId, item.NoteCount);
         });
 
-        const brandMap = new Map<string, BrandResponseItem>();
-        (brandsData.data as BrandResponseItem[]).forEach((brand) => {
+        // 解析和处理 DateCoverage
+        const processedBrands = (brandsData.data as BrandResponseItem[]).map((brand) => {
+          const parsed = parseDateCoverage(brand.DateCoverage);
+          return {
+            ...brand,
+            DateCoverage: parsed.coverage,
+            _hasDateCoverageError: parsed.hasError,
+          };
+        });
+
+        const brandMap = new Map<string, BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean }>();
+        processedBrands.forEach((brand) => {
           if (!brand.BrandId || !brand.BrandName) return;
           const key = `${brand.BrandId}__${brand.BrandName}`;
           const existing = brandMap.get(key);
           if (!existing || (!existing.BrandIdKey && brand.BrandIdKey)) {
-            brandMap.set(key, brand);
+            brandMap.set(key, brand as BrandResponseItem & { DateCoverage: DateRange[] | null; _hasDateCoverageError?: boolean });
           }
         });
 
@@ -73,6 +91,8 @@ export default function BrandListPage() {
             BrandIdKey: brand.BrandIdKey,
             BrandName: brand.BrandName,
             NoteCount: countsMap.get(brand.BrandId) || 0,
+            DateCoverage: brand.DateCoverage,
+            _hasDateCoverageError: brand._hasDateCoverageError,
           }))
           .sort((a, b) => {
             if (a.BrandId === b.BrandId) {
@@ -124,6 +144,47 @@ export default function BrandListPage() {
     router.push(`/dashboard/notes?${query}`);
   };
 
+  /**
+   * 渲染日期覆盖时间段
+   */
+  const renderDateCoverage = (coverage: DateRange[] | null | undefined) => {
+    // 空数据处理
+    if (!coverage || coverage.length === 0) {
+      return <Text type="secondary">-</Text>;
+    }
+    
+    // 格式化所有时间段
+    const formattedRanges = coverage.map(formatDateRange);
+    
+    // 多行显示
+    const content = (
+      <div>
+        {coverage.map((range, index) => (
+          <div key={index} style={{ marginBottom: index < coverage.length - 1 ? 4 : 0 }}>
+            <Text>{formatDateRange(range)}</Text>
+          </div>
+        ))}
+      </div>
+    );
+    
+    // Tooltip 显示完整信息
+    const tooltipContent = (
+      <div>
+        {formattedRanges.map((range, index) => (
+          <div key={index} style={{ marginBottom: index < formattedRanges.length - 1 ? 4 : 0 }}>
+            {range}
+          </div>
+        ))}
+      </div>
+    );
+    
+    return (
+      <Tooltip title={tooltipContent}>
+        {content}
+      </Tooltip>
+    );
+  };
+
   const columns: ColumnsType<BrandRecord> = [
     {
       title: '序号',
@@ -148,6 +209,23 @@ export default function BrandListPage() {
       title: '笔记总数',
       dataIndex: 'NoteCount',
       key: 'noteCount',
+    },
+    {
+      title: '数据覆盖时间段',
+      dataIndex: 'DateCoverage',
+      key: 'dateCoverage',
+      width: 250,
+      render: (coverage: DateRange[] | null | undefined, record: BrandRecord) => {
+        // 如果 DateCoverage 存在但解析失败，显示错误提示
+        if (record._hasDateCoverageError) {
+          return (
+            <Tooltip title="DateCoverage 数据格式错误（非数组、JSON 解析失败或日期格式无效）">
+              <Text type="danger">数据格式错误</Text>
+            </Tooltip>
+          );
+        }
+        return renderDateCoverage(coverage);
+      },
     },
     {
       title: '操作',

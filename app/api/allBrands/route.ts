@@ -8,7 +8,7 @@
  * {
  *   "success": true,
  *   "data": [
- *     { "BrandId": "...", "BrandIdKey": "...", "BrandName": "..." },
+ *     { "BrandId": "...", "BrandIdKey": "...", "BrandName": "...", "DateCoverage": [...] },
  *     ...
  *   ]
  * }
@@ -25,7 +25,7 @@ export async function GET() {
     // 查询所有品牌（从视图），按 BrandId 排序
     const { data, error } = await supabase
       .from('qiangua_all_brands')
-      .select('BrandId, BrandIdKey, BrandName')
+      .select('BrandId, BrandIdKey, BrandName, DateCoverage')
       .order('BrandId', { ascending: true });
 
     if (error) {

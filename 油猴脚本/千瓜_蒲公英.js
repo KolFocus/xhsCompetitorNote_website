@@ -2037,6 +2037,28 @@
             setTimeout(cleanupOverallProgress, 800);
         }
 
+        // 保存 DateCoverage（所有笔记入库完成后，最后一步）
+        if (window.currentBrandQueryParams) {
+            const brandid = window.currentBrandQueryParams.brandid;
+            const starttime = window.currentBrandQueryParams.starttime;
+            const endtime = window.currentBrandQueryParams.endtime;
+            try {
+                const saveResult = await saveDateCoverageToBrand(brandid, starttime, endtime);
+                console.log('[song DateCoverage] :', saveResult);
+                if (!saveResult.success) {
+                    showMessage('DateCoverage 保存失败：' + saveResult.error, false);
+                    console.warn('[DateCoverage] 保存失败:', saveResult.error);
+                }
+            } catch (err) {
+                const errMsg = err && err.message ? err.message : String(err);
+                showMessage('DateCoverage 保存异常：' + errMsg, false);
+                console.warn('[DateCoverage] 保存异常:', err);
+            } finally {
+                // 清除全局变量
+                window.currentBrandQueryParams = null;
+            }
+        }
+
         if (failureMessages.length === 0) {
             const msg = `AZ_seed 成功：成功入库/更新 ${totalBloggers} 位博主；成功入库/更新 ${totalBrands} 个品牌；成功插入 ${totalNotes} 条数据`;
             originalShowMessage(msg, true);
@@ -2155,7 +2177,28 @@
                 if (currentSignature !== window.signatureKey) {
                     window.noteHotMap = {};
                     const rspJson = JSON.parse(this.responseText);
-                    window.totalCount = rspJson.Data.TotalCount
+                    window.totalCount = rspJson.Data.TotalCount;
+                    // 同步清除 currentBrandQueryParams
+                    window.currentBrandQueryParams = null;
+                }
+
+                // 验证并保存查询参数（只在 pageindex=1 时保存）
+                try {
+                    console.log('params', JSON.stringify(params));
+                    const validation = validateBrandQueryParams(params);
+                    if (validation.valid) {
+                        if (params.pageindex === 1) {
+                            window.currentBrandQueryParams = {
+                                brandid: params.brandid,
+                                starttime: params.starttime,
+                                endtime: params.endtime
+                            };
+                        }
+                    } else {
+                        console.warn('[DateCoverage] 参数验证失败:', validation.reason);
+                    }
+                } catch (err) {
+                    console.warn('[DateCoverage] 解析请求参数失败:', err);
                 }
 
                 // 将响应数据保存到 noteHotMap
@@ -2634,6 +2677,332 @@
         return result;
     }
 
+    // ====== DateCoverage 相关函数 ======
+    
+    /**
+     * 验证日期格式是否为 YYYY-MM-DD
+     */
+    function isValidDateFormat(date) {
+        if (typeof date !== 'string') return false;
+        const regex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!regex.test(date)) return false;
+        const d = new Date(date);
+        return d instanceof Date && !isNaN(d.getTime()) && date === d.toISOString().split('T')[0];
+    }
+
+    /**
+     * 验证请求参数是否符合要求
+     */
+    function validateBrandQueryParams(params) {
+        if (!params || typeof params !== 'object') {
+            return { valid: false, reason: '参数必须是对象' };
+        }
+        
+        // 1. 检查必需参数
+        const required = ['brandid', 'sign', 'starttime', 'endtime', 'notefeature', 'hasgoods', 'pageindex', 'pagesize'];
+        const missing = required.filter(key => !(key in params));
+        if (missing.length > 0) {
+            return { valid: false, reason: `缺少必需参数：${missing.join(', ')}` };
+        }
+        
+        // 2. 检查 notefeature === 3
+        if (params.notefeature !== 3) {
+            return { valid: false, reason: `notefeature 值不正确：期望3，实际${params.notefeature}` };
+        }
+        
+        // 3. 检查 hasgoods === false
+        if (params.hasgoods !== false) {
+            return { valid: false, reason: `hasgoods 值不正确：期望false，实际${params.hasgoods}` };
+        }
+        
+        // 4. 检查可选参数 days（如果出现，必须是 -1）
+        if ('days' in params && params.days !== -1) {
+            return { valid: false, reason: `days 值不正确：期望-1，实际${params.days}` };
+        }
+        
+        // 5. 检查可选参数 locationtype（如果出现，必须是 28）
+        if ('locationtype' in params && params.locationtype !== 28) {
+            return { valid: false, reason: `locationtype 值不正确：期望28，实际${params.locationtype}` };
+        }
+        
+        // 6. sorttype 可出现，也可不出现，不校验值（不需要检查）
+        
+        // 7. 检查是否存在其他不允许的参数
+        const allowedKeys = required.concat(['days', 'locationtype', 'sorttype']);
+        const keys = Object.keys(params);
+        const invalidKeys = keys.filter(key => !allowedKeys.includes(key));
+        if (invalidKeys.length > 0) {
+            return { valid: false, reason: `存在不允许的参数：${invalidKeys.join(', ')}` };
+        }
+        
+        return { valid: true };
+    }
+
+    /**
+     * 验证日期范围
+     */
+    function validateDateRange(starttime, endtime) {
+        // 1. 验证格式
+        if (!isValidDateFormat(starttime)) {
+            return { valid: false, reason: `starttime 格式不正确：${starttime}` };
+        }
+        if (!isValidDateFormat(endtime)) {
+            return { valid: false, reason: `endtime 格式不正确：${endtime}` };
+        }
+        
+        // 2. 验证 starttime <= endtime
+        if (starttime > endtime) {
+            return { valid: false, reason: `starttime (${starttime}) 不能大于 endtime (${endtime})` };
+        }
+        
+        return { valid: true };
+    }
+
+    /**
+     * 验证单个日期段对象
+     */
+    function validateDateRangeItem(range) {
+        // 1. 检查对象格式
+        if (!range || typeof range !== 'object') {
+            return { valid: false, reason: '日期段必须是对象' };
+        }
+        
+        // 2. 检查字段存在
+        if (!range.startDate || !range.endDate) {
+            return { valid: false, reason: '日期段缺少 startDate 或 endDate' };
+        }
+        
+        // 3. 检查字段类型
+        if (typeof range.startDate !== 'string' || typeof range.endDate !== 'string') {
+            return { valid: false, reason: 'startDate 和 endDate 必须是字符串' };
+        }
+        
+        // 4. 验证日期格式
+        if (!isValidDateFormat(range.startDate)) {
+            return { valid: false, reason: `startDate 格式不正确：${range.startDate}` };
+        }
+        if (!isValidDateFormat(range.endDate)) {
+            return { valid: false, reason: `endDate 格式不正确：${range.endDate}` };
+        }
+        
+        // 5. 验证 startDate <= endDate
+        if (range.startDate > range.endDate) {
+            return { valid: false, reason: `startDate (${range.startDate}) 不能大于 endDate (${range.endDate})` };
+        }
+        
+        return { valid: true };
+    }
+
+    /**
+     * 合并重合的日期段
+     */
+    function mergeDateRanges(ranges) {
+        if (!Array.isArray(ranges) || ranges.length === 0) {
+            return [];
+        }
+        
+        // 1. 过滤并验证所有日期段
+        const validRanges = [];
+        ranges.forEach(function(range, index) {
+            const validation = validateDateRangeItem(range);
+            if (validation.valid) {
+                validRanges.push(range);
+            } else {
+                console.warn('[DateCoverage] 跳过无效日期段 [' + index + ']:', validation.reason);
+            }
+        });
+        
+        if (validRanges.length === 0) {
+            return [];
+        }
+        
+        // 2. 按 startDate 排序
+        const sorted = validRanges.slice().sort(function(a, b) {
+            return a.startDate.localeCompare(b.startDate);
+        });
+        
+        // 3. 合并重合或连续的区间
+        const merged = [];
+        let current = sorted[0];
+        
+        for (let i = 1; i < sorted.length; i++) {
+            const next = sorted[i];
+            
+            // 使用 Date 对象进行比较，确保正确处理日期
+            const currentEndDate = new Date(current.endDate);
+            const nextStartDate = new Date(next.startDate);
+            
+            // 计算 current.endDate 的下一天（用于判断是否连续）
+            const nextDayAfterCurrentEnd = new Date(currentEndDate);
+            nextDayAfterCurrentEnd.setDate(nextDayAfterCurrentEnd.getDate() + 1);
+            
+            // 判断是否重合或连续：
+            // 1. 重合：current.endDate >= next.startDate
+            // 2. 连续：current.endDate 的下一天 == next.startDate
+            if (currentEndDate >= nextStartDate || 
+                nextDayAfterCurrentEnd.getTime() === nextStartDate.getTime()) {
+                // 合并：取更大的 endDate
+                const currentEnd = new Date(current.endDate);
+                const nextEnd = new Date(next.endDate);
+                current = {
+                    startDate: current.startDate,
+                    endDate: currentEnd >= nextEnd ? current.endDate : next.endDate
+                };
+            } else {
+                // 不重合且不连续，保存当前区间，开始新的区间
+                merged.push(current);
+                current = next;
+            }
+        }
+        
+        // 添加最后一个区间
+        merged.push(current);
+        
+        return merged;
+    }
+
+    /**
+     * 读取品牌信息和 DateCoverage
+     */
+    async function fetchBrandDateCoverage(brandid) {
+        try {
+            const queryUrl = SUPABASE_URL + '/rest/v1/' + BRAND_TABLE_NAME + '?BrandId=eq.' + encodeURIComponent(String(brandid)) + '&select=BrandId,DateCoverage';
+            const response = await fetchWithRetry(queryUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_KEY,
+                    'X-AZ-Phase': 'date-coverage-fetch'
+                }
+            }, 1, 10000);
+            
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+            }
+            
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+                return {
+                    exists: true,
+                    dateCoverage: data[0].DateCoverage
+                };
+            }
+            // 品牌不存在
+            return {
+                exists: false,
+                dateCoverage: null
+            };
+        } catch (error) {
+            throw new Error('读取品牌信息失败: ' + (error.message || String(error)));
+        }
+    }
+
+    /**
+     * 更新 DateCoverage
+     */
+    async function updateBrandDateCoverage(brandid, coverageArray) {
+        try {
+            const queryUrl = SUPABASE_URL + '/rest/v1/' + BRAND_TABLE_NAME + '?BrandId=eq.' + encodeURIComponent(String(brandid));
+            const prefer = window.AZ_DEBUG ? 'return=representation' : 'return=min';
+            const response = await fetchWithRetry(queryUrl, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_KEY,
+                    'Prefer': prefer,
+                    'X-AZ-Phase': 'date-coverage-update'
+                },
+                body: JSON.stringify({ DateCoverage: coverageArray })
+            }, 1, 10000);
+            
+            if (!response.ok) {
+                const errorInfo = await parseErrorResponse(response);
+                throw new Error('更新 DateCoverage 失败: ' + errorInfo);
+            }
+            
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message || String(error) };
+        }
+    }
+
+    /**
+     * 保存 DateCoverage 到品牌
+     */
+    async function saveDateCoverageToBrand(brandid, starttime, endtime) {
+        try {
+            // 1. 验证日期格式
+            const dateValidation = validateDateRange(starttime, endtime);
+            if (!dateValidation.valid) {
+                return { success: false, error: dateValidation.reason };
+            }
+            
+            // 2. 读取品牌信息和 DateCoverage
+            let brandInfo;
+            try {
+                brandInfo = await fetchBrandDateCoverage(brandid);
+            } catch (err) {
+                return { success: false, error: '读取品牌信息失败: ' + (err.message || String(err)) };
+            }
+            
+            // 3. 检查品牌是否存在
+            if (!brandInfo.exists) {
+                return { success: false, error: '品牌不存在（BrandId: ' + brandid + '），请先确保品牌已入库' };
+            }
+            
+            // 4. 解析现有的 DateCoverage
+            let coverageArray = [];
+            const existingCoverage = brandInfo.dateCoverage;
+            if (existingCoverage !== null && existingCoverage !== undefined) {
+                try {
+                    const parsed = typeof existingCoverage === 'string' 
+                        ? JSON.parse(existingCoverage) 
+                        : existingCoverage;
+                    if (Array.isArray(parsed)) {
+                        coverageArray = parsed;
+                    } else {
+                        return { success: false, error: '现有 DateCoverage 不是数组格式，无法处理' };
+                    }
+                } catch (err) {
+                    return { success: false, error: '解析现有 DateCoverage 失败: ' + (err.message || String(err)) };
+                }
+            }
+            
+            // 5. 验证所有现有日期段（严格验证，跳过无效的）
+            const validatedExisting = [];
+            coverageArray.forEach(function(range, index) {
+                const validation = validateDateRangeItem(range);
+                if (validation.valid) {
+                    validatedExisting.push(range);
+                } else {
+                    console.warn('[DateCoverage] 跳过无效的现有日期段 [' + index + ']:', validation.reason);
+                }
+            });
+            
+            // 6. 添加新的日期段
+            validatedExisting.push({
+                startDate: starttime,
+                endDate: endtime
+            });
+            
+            // 7. 合并重合的日期段（重新计算）
+            const merged = mergeDateRanges(validatedExisting);
+            
+            // 8. 保存回数据库
+            const updateResult = await updateBrandDateCoverage(brandid, merged);
+            if (!updateResult.success) {
+                return { success: false, error: updateResult.error };
+            }
+            
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message || String(error) };
+        }
+    }
+
     async function parseErrorResponse(response) {
         try {
             const text = await response.text();
@@ -2927,6 +3296,7 @@
             console.error('[runUploadFlow] 笔记入库失败，退出');
             return { success: false, message: '笔记入库失败: ' + noteResult.message };
         }
+
         console.log('[runUploadFlow] ========== 执行完成（成功） ==========');
         return { success: true, message: `${bloggerResult.message}；${brandResult.message}；${noteResult.message}` };
     }
