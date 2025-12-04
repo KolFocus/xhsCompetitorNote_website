@@ -98,11 +98,13 @@ export default function BrandListPage() {
       return brands;
     }
     const keyword = searchValue.trim().toLowerCase();
-    return brands.filter(
+    const result = brands.filter(
       (brand) =>
         brand.BrandName.toLowerCase().includes(keyword) ||
         brand.BrandId.toLowerCase().includes(keyword),
     );
+    console.log('过滤后的品牌列表:', result);
+    return result;
   }, [brands, searchValue]);
 
   const handleOpenQianGua = (brand: BrandRecord) => {
@@ -183,7 +185,7 @@ export default function BrandListPage() {
 
       <Card>
         <Table
-          rowKey="BrandId"
+          rowKey={(record) => `${record.BrandId}#KF#${record.BrandName}`}
           loading={loading}
           columns={columns}
           dataSource={filteredBrands}
