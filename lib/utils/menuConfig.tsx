@@ -69,6 +69,12 @@ export const menuItems: MenuItem[] = [
         icon: <RobotOutlined />,
         path: '/dashboard/system/ai-analysis',
       },
+      {
+        key: 'system-product-linking',
+        label: '商品关联',
+        icon: <AppstoreOutlined />,
+        path: '/dashboard/system/product-linking',
+      },
     ],
   },
 ];
