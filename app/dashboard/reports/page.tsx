@@ -1311,24 +1311,6 @@ export default function ReportsPage() {
                 />
               </Col>
               <Col>
-                <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <strong>关键词：</strong>
-                  <Tooltip
-                    title={
-                      <div>
-                        <div>搜索语法：</div>
-                        <div>+词：结果中必须包含该关键词</div>
-                        <div>-词：结果中不能出现该关键词</div>
-                        <div>A|B|C 或 A B C：任意命中一个即可</div>
-                        <div style={{ marginTop: 4 }}>
-                          示例：C +A D -B ⇒ 至少包含 C 或 D，必须包含 A，且不能包含 B
-                        </div>
-                      </div>
-                    }
-                  >
-                    <span style={{ cursor: 'pointer', color: '#999', fontSize: 12 }}>语法说明</span>
-                  </Tooltip>
-                </div>
                 <Input
                   placeholder="搜索标题、内容、AI分析结果等"
                   allowClear
@@ -1340,6 +1322,21 @@ export default function ReportsPage() {
                   }}
                   style={{ width: 250 }}
                 />
+                <Tooltip
+                  title={
+                    <div>
+                      <div>搜索语法：</div>
+                      <div>+词：结果中必须包含该关键词</div>
+                      <div>-词：结果中不能出现该关键词</div>
+                      <div>A|B|C 或 A B C：任意命中一个即可</div>
+                      <div style={{ marginTop: 4 }}>
+                        示例：C +A D -B ⇒ 至少包含 C 或 D，必须包含 A，且不能包含 B
+                      </div>
+                    </div>
+                  }
+                >
+                  <QuestionCircleOutlined style={{ color: '#999', cursor: 'help', marginLeft: 8 }} />
+                </Tooltip>                
               </Col>
               <Col>
                 <Button type="primary" onClick={() => {
