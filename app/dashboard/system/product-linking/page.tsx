@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Form,
+  Image,
   Input,
   Modal,
   Select,
@@ -12,16 +13,36 @@ import {
   Table,
   Tag,
   Tooltip,
+  Tabs,
   message,
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { QuestionCircleOutlined, LinkOutlined, StopOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  QuestionCircleOutlined,
+  LinkOutlined,
+  StopOutlined,
+  ReloadOutlined,
+  VideoCameraOutlined,
+  PictureOutlined,
+} from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
 import { PRODUCT_LINKING_IGNORE_UUID, PRODUCT_LINKING_DEFAULT_PAGE_SIZE } from '@/lib/constants/productLinking';
 
 const { Text } = Typography;
+
+// 图片代理服务（与笔记列表/标签页保持一致）
+const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
+const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
+  if (!url) return undefined;
+  if (url.includes('xhstool.cc/api/proxy')) return url;
+  if (url.startsWith('/')) {
+    const normalized = `https:${url}`;
+    return `${PROXY_BASE_URL}?url=${encodeURIComponent(normalized)}`;
+  }
+  return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
+};
 
 type StatusType = 'pending' | 'linked' | 'ignored';
 
@@ -39,7 +60,14 @@ interface Product {
 interface CandidateRecord {
   id: string;
   noteId: string;
+  xhsNoteId?: string;
   noteTitle: string;
+  coverImage?: string | null;
+  xhsNoteLink?: string | null;
+  noteType?: string | null;
+  videoDuration?: string | null;
+  bloggerNickName?: string | null;
+  xhsUserId?: string | null;
   publishTime: string;
   productAliasName: string;
   brandId: string;
@@ -64,7 +92,14 @@ const formatTime = (t: string) => dayjs(t).format('YYYY-MM-DD HH:mm');
 const mapCandidate = (row: any): CandidateRecord => ({
   id: row.Id || row.id,
   noteId: row.NoteId || row.noteId,
+  xhsNoteId: row.XhsNoteId || row.xhsNoteId,
   noteTitle: row.NoteTitle || row.noteTitle || '',
+  coverImage: row.CoverImage ?? row.coverImage ?? null,
+  xhsNoteLink: row.XhsNoteLink ?? row.xhsNoteLink ?? null,
+  noteType: row.NoteType ?? row.noteType ?? null,
+  videoDuration: row.VideoDuration ?? row.videoDuration ?? null,
+  bloggerNickName: row.BloggerNickName ?? row.bloggerNickName ?? null,
+  xhsUserId: row.XhsUserId ?? row.xhsUserId ?? null,
   publishTime: row.PublishTime || row.publishTime || row.CreatedAt || row.createdAt,
   productAliasName: row.ProductAliasName || row.productAliasName,
   brandId: row.BrandId || row.brandId,
@@ -100,7 +135,7 @@ export default function ProductLinkingPage() {
 
   const [brandFilter, setBrandFilter] = useState<string>();
   const [noteIdFilter, setNoteIdFilter] = useState<string>();
-  const [statusFilter, setStatusFilter] = useState<StatusType | 'all'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusType | 'all'>('pending');
   const [keyword, setKeyword] = useState<string>('');
 
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -109,9 +144,12 @@ export default function ProductLinkingPage() {
 
   const [linkTargetProductId, setLinkTargetProductId] = useState<string>();
   const [newProductName, setNewProductName] = useState<string>('');
+  const [creatingProduct, setCreatingProduct] = useState(false);
   const [linkScope, setLinkScope] = useState<'single' | 'batch'>('single');
+  const [linkTab, setLinkTab] = useState<'existing' | 'create'>('existing');
   const [actingIds, setActingIds] = useState<string[]>([]);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PRODUCT_LINKING_DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
 
   const allBrands = useMemo(() => {
@@ -127,16 +165,12 @@ export default function ProductLinkingPage() {
 
   const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
 
-  const filteredData = useMemo(() => {
-    return data;
-  }, [data]);
-
   const brandOptions = allBrands.map((b) => ({ label: `${b.name} (${b.id})`, value: `${b.id}#${b.name}` }));
   const statusOptions = [
-    { label: '全部', value: 'all' },
     { label: '待处理', value: 'pending' },
     { label: '已关联', value: 'linked' },
     { label: '已忽略', value: 'ignored' },
+    { label: '全部', value: 'all' },
   ];
 
   const handleOpenLinkModal = (scope: 'single' | 'batch', ids: string[]) => {
@@ -144,6 +178,8 @@ export default function ProductLinkingPage() {
     setActingIds(ids);
     setLinkTargetProductId(undefined);
     setNewProductName('');
+    setCreatingProduct(false);
+    setLinkTab('existing');
     setLinkModalOpen(true);
   };
 
@@ -158,36 +194,15 @@ export default function ProductLinkingPage() {
   };
 
   const doLink = () => {
-    if (!linkTargetProductId && !newProductName.trim()) {
-      message.warning('请选择商品或输入新商品名称');
+    if (!linkTargetProductId) {
+      message.warning('请选择商品');
       return;
     }
     const brandKey = actingIds.length > 0 ? prevBrandKey(actingIds[0]) : undefined;
     const run = async () => {
       try {
         setLoading(true);
-        let targetProductId = linkTargetProductId;
-        if (!targetProductId && newProductName.trim()) {
-          if (linkScope !== 'batch') {
-            message.warning('单条不支持新建商品');
-            return;
-          }
-          if (!brandKey) throw new Error('品牌信息缺失');
-          const [brandId, brandName] = brandKey.split('#');
-          const res = await fetchJson('/api/products', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              productName: newProductName.trim(),
-              brandId,
-              brandName,
-            }),
-          });
-          targetProductId = res.ProductId || res.productId;
-          await loadProducts(brandKey);
-        }
-
-        if (!targetProductId) throw new Error('未获取商品ID');
+        const targetProductId = linkTargetProductId;
 
         if (linkScope === 'single') {
           await fetchJson(`/api/note-products/${actingIds[0]}/link`, {
@@ -220,6 +235,44 @@ export default function ProductLinkingPage() {
   const prevBrandKey = (id: string) => {
     const target = data.find((d) => d.id === id);
     return target ? `${target.brandId}#${target.brandName}` : '';
+  };
+
+  const handleCreateProduct = async () => {
+    if (linkScope !== 'batch') {
+      message.warning('新建商品仅支持批量关联时使用');
+      return;
+    }
+    const name = newProductName.trim();
+    if (!name) {
+      message.warning('请输入商品名称');
+      return;
+    }
+    const brandKey = actingIds.length > 0 ? prevBrandKey(actingIds[0]) : '';
+    if (!brandKey) {
+      message.error('品牌信息缺失');
+      return;
+    }
+    const [brandId, brandName] = brandKey.split('#');
+    try {
+      setCreatingProduct(true);
+      const res = await fetchJson('/api/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productName: name,
+          brandId,
+          brandName,
+        }),
+      });
+      const newId = res.ProductId || res.productId;
+      message.success('新建商品成功');
+      setLinkTargetProductId(newId);
+      await loadProducts(brandKey);
+    } catch (err: any) {
+      message.error(err.message || '新建商品失败');
+    } finally {
+      setCreatingProduct(false);
+    }
   };
 
   const doUnlink = () => {
@@ -300,32 +353,101 @@ export default function ProductLinkingPage() {
 
   const columns: ColumnsType<CandidateRecord> = [
     {
-      title: '笔记ID',
-      dataIndex: 'noteId',
-      key: 'noteId',
-      width: 140,
-    },
-    {
-      title: '笔记标题',
+      title: '笔记',
       dataIndex: 'noteTitle',
-      key: 'noteTitle',
-      render: (text) => <Text ellipsis style={{ maxWidth: 240 }} title={text}>{text}</Text>,
+      key: 'note',
+      width: 200,
+      render: (_text, record) => {
+        const xhsLink = record.xhsNoteLink
+          ? record.xhsNoteLink
+          : record.xhsNoteId
+          ? `https://www.xiaohongshu.com/explore/${record.xhsNoteId}`
+          : undefined;
+        const cover = getProxiedImageUrl(record.coverImage);
+        return (
+          <div style={{ width: 180 }}>
+            <div
+              style={{
+                width: 180,
+                height: 240,
+                cursor: cover ? 'pointer' : 'default',
+                marginBottom: 8,
+                overflow: 'hidden',
+                borderRadius: 4,
+                backgroundColor: '#f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+              onClick={() => {
+                if (cover) {
+                  window.open(cover, '_blank');
+                }
+              }}
+            >
+              {cover ? (
+                <Image
+                  src={cover}
+                  alt={record.noteTitle || '笔记封面'}
+                  width={180}
+                  height={240}
+                  style={{ objectFit: 'cover' }}
+                  preview={false}
+                  fallback=""
+                />
+              ) : (
+                <Text type="secondary">无封面</Text>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Tooltip title={record.noteTitle || '未命名笔记'}>
+                <Text strong ellipsis style={{ maxWidth: 150 }}>
+                  {record.noteTitle || '未命名笔记'}
+                </Text>
+              </Tooltip>
+              {xhsLink && (
+                <LinkOutlined
+                  style={{ color: '#1890ff', cursor: 'pointer', flexShrink: 0 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(xhsLink, '_blank');
+                  }}
+                />
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              {record.noteType ? (
+                <Tag color={record.noteType === 'video' ? 'blue' : 'green'} icon={record.noteType === 'video' ? <VideoCameraOutlined /> : <PictureOutlined />}>
+                  {record.noteType === 'video'
+                    ? record.videoDuration
+                      ? `${record.videoDuration}`
+                      : '视频'
+                    : '图文'}
+                </Tag>
+              ) : (
+                <Tag color="default">未知类型</Tag>
+              )}
+              {record.xhsUserId ? (
+                <a
+                  href={`https://www.xiaohongshu.com/user/profile/${record.xhsUserId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: '#1890ff', cursor: 'pointer' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {record.bloggerNickName || '未知博主'}
+                </a>
+              ) : (
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  {record.bloggerNickName || '未知博主'}
+                </Text>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
-    {
-      title: '发布时间',
-      dataIndex: 'publishTime',
-      key: 'publishTime',
-      width: 160,
-      render: (t) => formatTime(t),
-      sorter: (a, b) => dayjs(a.publishTime).valueOf() - dayjs(b.publishTime).valueOf(),
-      defaultSortOrder: 'descend',
-    },
-    {
-      title: '候选商品名',
-      dataIndex: 'productAliasName',
-      key: 'productAliasName',
-      render: (text) => <div>{highlightText(text)}</div>,
-    },
+    // 笔记ID/标题在“笔记”列展示，这里去掉单独列
     {
       title: '品牌',
       dataIndex: 'brandName',
@@ -334,9 +456,14 @@ export default function ProductLinkingPage() {
       render: (_, record) => (
         <div>
           <div>{record.brandName}</div>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.brandId}</Text>
         </div>
       ),
+    },
+    {
+      title: '候选商品名',
+      dataIndex: 'productAliasName',
+      key: 'productAliasName',
+      render: (text) => <div>{highlightText(text)}</div>,
     },
     {
       title: '当前关联商品',
@@ -429,12 +556,12 @@ export default function ProductLinkingPage() {
 
   const resetSelection = () => setSelectedRowKeys([]);
 
-  const loadCandidates = async (pageValue = page) => {
+  const loadCandidates = async (pageValue = page, pageSizeValue = pageSize) => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       params.set('page', String(pageValue));
-      params.set('pageSize', String(PRODUCT_LINKING_DEFAULT_PAGE_SIZE));
+      params.set('pageSize', String(pageSizeValue));
       if (brandFilter) {
         const [bid, bname] = brandFilter.split('#');
         params.set('brandId', bid);
@@ -445,10 +572,13 @@ export default function ProductLinkingPage() {
       if (keyword.trim()) params.set('keyword', keyword.trim());
 
       const res = await fetchJson(`/api/note-products?${params.toString()}`);
-      const list: CandidateRecord[] = (res || []).map(mapCandidate);
+      const listRaw = Array.isArray(res?.list) ? res.list : res || [];
+      const list: CandidateRecord[] = (listRaw || []).map(mapCandidate);
+      const totalRaw = typeof res?.total === 'number' ? res.total : list.length;
       setData(list);
-      setTotal(res?.length || list.length || 0);
+      setTotal(totalRaw);
       setPage(pageValue);
+      setPageSize(pageSizeValue);
       resetSelection();
     } catch (err: any) {
       console.error('loadCandidates error', err);
@@ -477,18 +607,12 @@ export default function ProductLinkingPage() {
   useEffect(() => {
     loadCandidates(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [brandFilter, noteIdFilter, statusFilter, keyword]);
+  }, []);
 
   return (
     <div style={{ padding: 24 }}>
-      <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ReloadOutlined />} onClick={() => loadCandidates()}>
-          刷新
-        </Button>
-      </Space>
-
       <Card style={{ marginBottom: 16 }}>
-        <Space wrap size="large">
+        <Space wrap size="large" align="end">
           <div>
             <div style={{ marginBottom: 6 }}>品牌</div>
             <Select
@@ -543,6 +667,11 @@ export default function ProductLinkingPage() {
               onChange={(e) => setKeyword(e.target.value)}
             />
           </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Button type="primary" onClick={() => loadCandidates(1, pageSize)} style={{ marginBottom: 6 }}>
+              搜索
+            </Button>
+          </div>
         </Space>
       </Card>
 
@@ -585,12 +714,15 @@ export default function ProductLinkingPage() {
           loading={loading}
           rowSelection={rowSelection}
           columns={columns}
-          dataSource={filteredData}
+          dataSource={data}
           pagination={{
-            pageSize: PRODUCT_LINKING_DEFAULT_PAGE_SIZE,
+            pageSize,
             current: page,
             total,
-            onChange: (p) => loadCandidates(p),
+            showSizeChanger: true,
+            pageSizeOptions: [20, 50, 100].map(String),
+            onChange: (p, ps) => loadCandidates(p, ps),
+            onShowSizeChange: (p, ps) => loadCandidates(p, ps),
           }}
           scroll={{ x: 1000 }}
         />
@@ -604,46 +736,55 @@ export default function ProductLinkingPage() {
         onOk={doLink}
         okText="确认关联并覆盖"
       >
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <div style={{ marginBottom: 6 }}>选择已有商品</div>
-            <Select
-              allowClear
-              placeholder="选择商品"
-              style={{ width: '100%' }}
-              value={linkTargetProductId}
-              onChange={(v) => setLinkTargetProductId(v)}
-              options={productsForBrand.map((p) => ({
-                label: `${p.productName}`,
-                value: p.productId,
-              }))}
-            />
-          </div>
-          {linkScope === 'batch' && (
-            <>
-              <div>
-                <div style={{ marginBottom: 6 }}>
-                  新建商品（仅商品名必填，自动带品牌；重复校验）
-                </div>
-                <Form layout="vertical">
-                  <Form.Item label="商品名称" required>
-                    <Input
-                      placeholder="输入商品标准名称"
-                      value={newProductName}
-                      onChange={(e) => {
-                        setNewProductName(e.target.value);
-                        if (e.target.value) {
-                          setLinkTargetProductId(undefined);
-                        }
-                      }}
-                    />
-                  </Form.Item>
-                </Form>
-              </div>
-              <Text type="secondary">若同时选择商品与填写新名称，以新建为准。</Text>
-            </>
-          )}
-        </Space>
+        <Tabs
+          activeKey={linkTab}
+          onChange={(key) => setLinkTab(key as 'existing' | 'create')}
+          items={[
+            {
+              key: 'existing',
+              label: '选择已有商品',
+              children: (
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  <Select
+                    allowClear
+                    placeholder="选择商品"
+                    style={{ width: '100%' }}
+                    value={linkTargetProductId}
+                    onChange={(v) => setLinkTargetProductId(v)}
+                    options={productsForBrand.map((p) => ({
+                      label: `${p.productName}`,
+                      value: p.productId,
+                    }))}
+                  />
+                </Space>
+              ),
+            },
+            ...(linkScope === 'batch'
+              ? [
+                  {
+                    key: 'create',
+                    label: '新建商品',
+                    children: (
+                      <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                        <Space align="start">
+                          <Input
+                            placeholder="输入商品标准名称"
+                            value={newProductName}
+                            style={{ width: 260 }}
+                            onChange={(e) => setNewProductName(e.target.value)}
+                          />
+                          <Button type="default" loading={creatingProduct} onClick={handleCreateProduct}>
+                            创建并加入列表
+                          </Button>
+                        </Space>
+                        <Text type="secondary">创建成功后，会加入下拉列表，请切回上方“选择已有商品”选择后再关联。</Text>
+                      </Space>
+                    ),
+                  },
+                ]
+              : []),
+          ]}
+        />
       </Modal>
 
       {/* 取消关联弹窗 */}

@@ -42,8 +42,12 @@ export async function GET(req: Request) {
       conditions.push(`c."BrandName" = $${params.length}`);
     }
     if (noteId) {
-      params.push(`%${noteId.trim()}%`);
-      conditions.push(`c."NoteId" ILIKE $${params.length}`);
+      const trimmed = noteId.trim();
+      params.push(`%${trimmed}%`);
+      params.push(`%${trimmed}%`);
+      const firstIdx = params.length - 1;
+      const secondIdx = params.length;
+      conditions.push(`(c."NoteId" ILIKE $${firstIdx} OR n."XhsNoteId" ILIKE $${secondIdx})`);
     }
 
     if (filters.mustInclude?.length) {
@@ -76,21 +80,39 @@ export async function GET(req: Request) {
       conditions.push(clause);
     }
 
-    params.push(pageSize);
-    params.push((page - 1) * pageSize);
-
     const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+    const paramsWithPagination = [...params, pageSize, (page - 1) * pageSize];
+
     const sql = `
-      SELECT c.*
+      SELECT
+        c.*,
+        n."NoteType",
+        n."VideoDuration",
+        n."BloggerNickName",
+        n."XhsUserId",
+        n."XhsNoteLink",
+        n."CoverImage"
       FROM qiangua_note_product_candidate c
+      LEFT JOIN qiangua_note_info n ON n."NoteId" = c."NoteId"
       ${whereClause}
       ORDER BY c."CreatedAt" DESC
-      LIMIT $${params.length - 1} OFFSET $${params.length}
+      LIMIT $${paramsWithPagination.length - 1} OFFSET $${paramsWithPagination.length}
     `;
 
-    const rows = await queryPg(sql, params);
-    return NextResponse.json({ success: true, data: rows });
+    const rows = await queryPg(sql, paramsWithPagination);
+
+    // 统计总数（不带分页参数）
+    const countSql = `
+      SELECT COUNT(*)::int AS total
+      FROM qiangua_note_product_candidate c
+      LEFT JOIN qiangua_note_info n ON n."NoteId" = c."NoteId"
+      ${whereClause}
+    `;
+    const countRows = await queryPg(countSql, params);
+    const total = countRows?.[0]?.total || 0;
+
+    return NextResponse.json({ success: true, data: { list: rows, total } });
   } catch (err: any) {
     console.error('[note-products][GET] error', err);
     return NextResponse.json({ success: false, error: err.message || 'Internal error' }, { status: 500 });
