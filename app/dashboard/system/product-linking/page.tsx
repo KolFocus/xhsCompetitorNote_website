@@ -13,7 +13,6 @@ import {
   Table,
   Tag,
   Tooltip,
-  Tabs,
   message,
   Typography,
 } from 'antd';
@@ -132,6 +131,7 @@ export default function ProductLinkingPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [brandOptions, setBrandOptions] = useState<{ label: string; value: string }[]>([]);
 
   const [brandFilter, setBrandFilter] = useState<string>();
   const [noteIdFilter, setNoteIdFilter] = useState<string>();
@@ -146,32 +146,18 @@ export default function ProductLinkingPage() {
   const [newProductName, setNewProductName] = useState<string>('');
   const [creatingProduct, setCreatingProduct] = useState(false);
   const [linkScope, setLinkScope] = useState<'single' | 'batch'>('single');
-  const [linkTab, setLinkTab] = useState<'existing' | 'create'>('existing');
   const [actingIds, setActingIds] = useState<string[]>([]);
+  const [createProductModalOpen, setCreateProductModalOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PRODUCT_LINKING_DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const loadedBrandKeysRef = useRef<Set<string>>(new Set());
 
-  const allBrands = useMemo(() => {
-    const map = new Map<string, string>();
-    data.forEach((d) => {
-      map.set(`${d.brandId}#${d.brandName}`, d.brandName);
-    });
-    return Array.from(map.keys()).map((key) => {
-      const [id, name] = key.split('#');
-      return { id, name, key };
-    });
-  }, [data]);
-
   const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
-
-  const brandOptions = allBrands.map((b) => ({ label: `${b.name} (${b.id})`, value: `${b.id}#${b.name}` }));
   const statusOptions = [
     { label: '待处理', value: 'pending' },
     { label: '已关联', value: 'linked' },
     { label: '已忽略', value: 'ignored' },
-    { label: '全部', value: 'all' },
   ];
 
   const handleOpenLinkModal = (scope: 'single' | 'batch', ids: string[]) => {
@@ -180,7 +166,6 @@ export default function ProductLinkingPage() {
     setLinkTargetProductId(undefined);
     setNewProductName('');
     setCreatingProduct(false);
-    setLinkTab('existing');
     setLinkModalOpen(true);
   };
 
@@ -239,8 +224,8 @@ export default function ProductLinkingPage() {
   };
 
   const handleCreateProduct = async () => {
-    if (linkScope !== 'batch') {
-      message.warning('新建商品仅支持批量关联时使用');
+    if (!brandFilter) {
+      message.warning('请先选择品牌再新建商品');
       return;
     }
     const name = newProductName.trim();
@@ -248,12 +233,7 @@ export default function ProductLinkingPage() {
       message.warning('请输入商品名称');
       return;
     }
-    const brandKey = actingIds.length > 0 ? prevBrandKey(actingIds[0]) : '';
-    if (!brandKey) {
-      message.error('品牌信息缺失');
-      return;
-    }
-    const [brandId, brandName] = brandKey.split('#');
+    const [brandId, brandName] = brandFilter.split('#');
     try {
       setCreatingProduct(true);
       const res = await fetchJson('/api/products', {
@@ -267,8 +247,11 @@ export default function ProductLinkingPage() {
       });
       const newId = res.ProductId || res.productId;
       message.success('新建商品成功');
+      setNewProductName('');
+      await loadProducts(brandFilter);
+      setCreateProductModalOpen(false);
+      // 如果当前已有联动品牌，自动选中刚创建的商品
       setLinkTargetProductId(newId);
-      await loadProducts(brandKey);
     } catch (err: any) {
       message.error(err.message || '新建商品失败');
     } finally {
@@ -478,7 +461,6 @@ export default function ProductLinkingPage() {
         return product ? (
           <div>
             <div>{product.productName}</div>
-            <Text type="secondary" style={{ fontSize: 12 }}>{product.productId}</Text>
           </div>
         ) : (
           <Text type="warning">未找到商品</Text>
@@ -558,6 +540,14 @@ export default function ProductLinkingPage() {
   const resetSelection = () => setSelectedRowKeys([]);
 
   const loadCandidates = async (pageValue = page, pageSizeValue = pageSize) => {
+    if (!brandFilter) {
+      setData([]);
+      setTotal(0);
+      setPage(pageValue);
+      setPageSize(pageSizeValue);
+      resetSelection();
+      return;
+    }
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -606,6 +596,22 @@ export default function ProductLinkingPage() {
   };
 
   useEffect(() => {
+    const loadBrands = async () => {
+      try {
+        const res = await fetchJson('/api/allBrands');
+        const opts =
+          Array.isArray(res) && res.length
+            ? res.map((b: any) => ({
+                label: `${b.BrandName}`,
+                value: `${b.BrandId}#${b.BrandName}`,
+              }))
+            : [];
+        setBrandOptions(opts);
+      } catch (err) {
+        console.error('loadBrands error', err);
+      }
+    };
+    loadBrands();
     loadCandidates(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -639,6 +645,12 @@ export default function ProductLinkingPage() {
               placeholder="选择品牌"
               options={brandOptions}
               value={brandFilter}
+              loading={loading && brandOptions.length === 0}
+              showSearch
+              filterOption={(input, option) => {
+                const label = typeof option?.label === 'string' ? option.label : String(option?.label || '');
+                return label.toLowerCase().includes(input.toLowerCase());
+              }}
               onChange={(v) => setBrandFilter(v)}
             />
           </div>
@@ -657,8 +669,10 @@ export default function ProductLinkingPage() {
             <Select
               style={{ width: 180 }}
               options={statusOptions}
-              value={statusFilter}
-              onChange={(v) => setStatusFilter(v as StatusType | 'all')}
+              value={statusFilter === 'all' ? undefined : statusFilter}
+              allowClear
+              placeholder="全部状态"
+              onChange={(v) => setStatusFilter((v as StatusType | undefined) ?? 'all')}
             />
           </div>
           <div>
@@ -688,6 +702,15 @@ export default function ProductLinkingPage() {
           <div style={{ display: 'flex', alignItems: 'center' }}>
             <Button type="primary" onClick={() => loadCandidates(1, pageSize)} style={{ marginBottom: 6 }}>
               搜索
+            </Button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <Button
+              onClick={() => setCreateProductModalOpen(true)}
+              disabled={!brandFilter}
+              style={{ marginBottom: 6 }}
+            >
+              新建商品
             </Button>
           </div>
         </Space>
@@ -733,6 +756,7 @@ export default function ProductLinkingPage() {
           rowSelection={rowSelection}
           columns={columns}
           dataSource={data}
+          locale={{ emptyText: brandFilter ? '暂无数据' : '请先选择品牌' }}
           pagination={{
             pageSize,
             current: page,
@@ -747,7 +771,7 @@ export default function ProductLinkingPage() {
         />
       </Card>
 
-      {/* 关联/新建弹窗 */}
+      {/* 关联弹窗 */}
       <Modal
         open={linkModalOpen}
         title={linkScope === 'single' ? '关联商品' : '批量关联商品'}
@@ -755,55 +779,48 @@ export default function ProductLinkingPage() {
         onOk={doLink}
         okText="确认关联并覆盖"
       >
-        <Tabs
-          activeKey={linkTab}
-          onChange={(key) => setLinkTab(key as 'existing' | 'create')}
-          items={[
-            {
-              key: 'existing',
-              label: '选择已有商品',
-              children: (
-                <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  <Select
-                    allowClear
-                    placeholder="选择商品"
-                    style={{ width: '100%' }}
-                    value={linkTargetProductId}
-                    onChange={(v) => setLinkTargetProductId(v)}
-                    options={productsForBrand.map((p) => ({
-                      label: `${p.productName}`,
-                      value: p.productId,
-                    }))}
-                  />
-                </Space>
-              ),
-            },
-            ...(linkScope === 'batch'
-              ? [
-                  {
-                    key: 'create',
-                    label: '新建商品',
-                    children: (
-                      <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                        <Space align="start">
-                          <Input
-                            placeholder="输入商品标准名称"
-                            value={newProductName}
-                            style={{ width: 260 }}
-                            onChange={(e) => setNewProductName(e.target.value)}
-                          />
-                          <Button type="default" loading={creatingProduct} onClick={handleCreateProduct}>
-                            创建并加入列表
-                          </Button>
-                        </Space>
-                        <Text type="secondary">创建成功后，会加入下拉列表，请切回上方“选择已有商品”选择后再关联。</Text>
-                      </Space>
-                    ),
-                  },
-                ]
-              : []),
-          ]}
-        />
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Select
+            allowClear
+            placeholder="选择商品"
+            style={{ width: '100%' }}
+            value={linkTargetProductId}
+            onChange={(v) => setLinkTargetProductId(v)}
+            options={productsForBrand.map((p) => ({
+              label: `${p.productName}`,
+              value: p.productId,
+            }))}
+          />
+        </Space>
+      </Modal>
+
+      {/* 新建商品弹窗 */}
+      <Modal
+        open={createProductModalOpen}
+        title="新建商品"
+        okText="创建"
+        onCancel={() => {
+          setCreateProductModalOpen(false);
+          setNewProductName('');
+        }}
+        confirmLoading={creatingProduct}
+        onOk={handleCreateProduct}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <div>
+            <div style={{ marginBottom: 6 }}>所属品牌</div>
+            <Text>{brandFilter ? brandFilter.split('#')[1] : '未选择'}</Text>
+          </div>
+          <div>
+            <div style={{ marginBottom: 6 }}>商品名称</div>
+            <Input
+              placeholder="输入商品标准名称"
+              value={newProductName}
+              onChange={(e) => setNewProductName(e.target.value)}
+            />
+          </div>
+          <Text type="secondary">商品仅绑定当前选中的品牌。创建成功后，可在关联弹窗中选择该商品进行关联。</Text>
+        </Space>
       </Modal>
 
       {/* 取消关联弹窗 */}
