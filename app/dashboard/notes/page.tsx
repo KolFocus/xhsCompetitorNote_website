@@ -174,14 +174,8 @@ function NotesPageContent() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  // 从 localStorage 读取显示AI分析的状态，默认为 false
-  const [showAiAnalysis, setShowAiAnalysis] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('showAiAnalysis');
-      return saved === 'true';
-    }
-    return false;
-  });
+  // 显示AI分析，默认为 false，避免 SSR 与客户端初始值不一致导致水合告警
+  const [showAiAnalysis, setShowAiAnalysis] = useState(false);
 
   // 过滤条件
   const [keyword, setKeyword] = useState<string>(''); // 关键词搜索
@@ -496,6 +490,13 @@ const [stats, setStats] = useState<{
 
   // 保存显示AI分析的状态到 localStorage
   useEffect(() => {
+    // 首次加载时读取本地存储
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('showAiAnalysis');
+      if (saved === 'true') {
+        setShowAiAnalysis(true);
+      }
+    }
     if (typeof window !== 'undefined') {
       localStorage.setItem('showAiAnalysis', String(showAiAnalysis));
     }

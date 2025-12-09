@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   Card,
@@ -151,6 +151,7 @@ export default function ProductLinkingPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PRODUCT_LINKING_DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
+  const loadedBrandKeysRef = useRef<Set<string>>(new Set());
 
   const allBrands = useMemo(() => {
     const map = new Map<string, string>();
@@ -609,6 +610,23 @@ export default function ProductLinkingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    // 自动为当前页已关联商品的品牌预加载商品列表，避免“未找到商品”显示
+    const brandKeys = Array.from(
+      new Set(
+        data
+          .filter((d) => d.linkedProductId && d.linkedProductId !== PRODUCT_LINKING_IGNORE_UUID)
+          .map((d) => `${d.brandId}#${d.brandName}`),
+      ),
+    );
+    brandKeys.forEach((key) => {
+      if (!loadedBrandKeysRef.current.has(key)) {
+        loadedBrandKeysRef.current.add(key);
+        loadProducts(key).catch(() => undefined);
+      }
+    });
+  }, [data]);
+
   return (
     <div style={{ padding: 24 }}>
       <Card style={{ marginBottom: 16 }}>
@@ -723,6 +741,7 @@ export default function ProductLinkingPage() {
             pageSizeOptions: [20, 50, 100].map(String),
             onChange: (p, ps) => loadCandidates(p, ps),
             onShowSizeChange: (p, ps) => loadCandidates(p, ps),
+            showTotal: (tot, range) => `第 ${range[0]}-${range[1]} 条，共 ${tot} 条`,
           }}
           scroll={{ x: 1000 }}
         />
