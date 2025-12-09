@@ -13,6 +13,7 @@ import {
   Table,
   Tag,
   Tooltip,
+  Checkbox,
   message,
   Typography,
 } from 'antd';
@@ -132,6 +133,8 @@ export default function ProductLinkingPage() {
   const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [brandOptions, setBrandOptions] = useState<{ label: string; value: string }[]>([]);
+  const [allCandidatesMap, setAllCandidatesMap] = useState<Map<string, CandidateRecord[]>>(new Map());
+  const [productMap, setProductMap] = useState<Record<string, string>>({});
 
   const [brandFilter, setBrandFilter] = useState<string>();
   const [noteIdFilter, setNoteIdFilter] = useState<string>();
@@ -152,6 +155,14 @@ export default function ProductLinkingPage() {
   const [pageSize, setPageSize] = useState(PRODUCT_LINKING_DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const loadedBrandKeysRef = useRef<Set<string>>(new Set());
+  const [addLinkModalOpen, setAddLinkModalOpen] = useState(false);
+  const [addTargetNote, setAddTargetNote] = useState<CandidateRecord | null>(null);
+  const [addSelectedProductId, setAddSelectedProductId] = useState<string>();
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [ignorePendingModalOpen, setIgnorePendingModalOpen] = useState(false);
+  const [ignorePendingList, setIgnorePendingList] = useState<CandidateRecord[]>([]);
+  const [ignoreSelectedIds, setIgnoreSelectedIds] = useState<string[]>([]);
+  const [ignoreSubmitting, setIgnoreSubmitting] = useState(false);
 
   const parsedKeyword = useMemo(() => parseKeywordExpression(keyword), [keyword]);
   const statusOptions = [
@@ -177,6 +188,26 @@ export default function ProductLinkingPage() {
   const handleOpenIgnoreModal = (ids: string[]) => {
     setActingIds(ids);
     setIgnoreModalOpen(true);
+  };
+
+  const handleOpenAddLinkModal = (record: CandidateRecord) => {
+    const brandKey = `${record.brandId}#${record.brandName}`;
+    setAddTargetNote(record);
+    setAddSelectedProductId(undefined);
+    setAddLinkModalOpen(true);
+    // 预加载该品牌商品
+    if (!loadedBrandKeysRef.current.has(brandKey)) {
+      loadedBrandKeysRef.current.add(brandKey);
+      loadProducts(brandKey).catch(() => undefined);
+    }
+  };
+
+  const openIgnorePendingModal = (noteId: string) => {
+    const list = groupedByNoteId.get(noteId) || [];
+    const pending = list.filter((item) => !item.linkedProductId);
+    setIgnorePendingList(pending);
+    setIgnoreSelectedIds(pending.map((p) => p.id));
+    setIgnorePendingModalOpen(true);
   };
 
   const doLink = () => {
@@ -216,6 +247,34 @@ export default function ProductLinkingPage() {
       title: '确认关联并覆盖？',
       onOk: run,
     });
+  };
+
+  const doAddLink = async () => {
+    if (!addTargetNote) return;
+    if (!addSelectedProductId) {
+      message.warning('请选择商品');
+      return;
+    }
+    try {
+      setAddSubmitting(true);
+      await fetchJson('/api/note-products/add-and-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          noteId: addTargetNote.noteId,
+          productId: addSelectedProductId,
+        }),
+      });
+      message.success('新增候选并关联成功');
+      setAddLinkModalOpen(false);
+      setAddTargetNote(null);
+      setAddSelectedProductId(undefined);
+      loadCandidates(page);
+    } catch (err: any) {
+      message.error(err.message || '新增关联失败');
+    } finally {
+      setAddSubmitting(false);
+    }
   };
 
   const prevBrandKey = (id: string) => {
@@ -304,6 +363,33 @@ export default function ProductLinkingPage() {
         message.error(err.message || '忽略失败');
       } finally {
         setLoading(false);
+      }
+    };
+    run();
+  };
+
+  const submitIgnorePending = () => {
+    const run = async () => {
+      if (!ignoreSelectedIds.length) {
+        message.warning('请选择要忽略的候选');
+        return;
+      }
+      try {
+        setIgnoreSubmitting(true);
+        await fetchJson(`/api/note-products/batch/ignore`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: ignoreSelectedIds }),
+        });
+        message.success('已批量忽略');
+        setIgnorePendingModalOpen(false);
+        setIgnorePendingList([]);
+        setIgnoreSelectedIds([]);
+        loadCandidates(page);
+      } catch (err: any) {
+        message.error(err.message || '忽略失败');
+      } finally {
+        setIgnoreSubmitting(false);
       }
     };
     run();
@@ -431,6 +517,78 @@ export default function ProductLinkingPage() {
         );
       },
     },
+    {
+      title: '所有商品',
+      key: 'allProducts',
+      width: 240,
+      render: (_, record) => {
+        const list = groupedByNoteId.get(record.noteId) || [];
+        const linked: string[] = [];
+        const ignored: string[] = [];
+        const pending: string[] = [];
+        list.forEach((item) => {
+          if (!item.linkedProductId) {
+            pending.push(item.productAliasName);
+          } else if (item.linkedProductId === PRODUCT_LINKING_IGNORE_UUID) {
+            ignored.push(item.productAliasName);
+          } else {
+            const targetNameFromMap = productMap[item.linkedProductId];
+            const product = products.find((p) => p.productId === item.linkedProductId);
+            const targetName = targetNameFromMap || (product ? product.productName : '未找到商品');
+            linked.push(`${item.productAliasName} -> ${targetName}`);
+          }
+        });
+        const sections: React.ReactNode[] = [];
+        if (linked.length) {
+          sections.push(
+            <div key="linked">
+              <div style={{ fontWeight: 600 }}>已关联：</div>
+              {linked.map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>,
+          );
+        }
+        if (ignored.length) {
+          sections.push(
+            <div key="ignored" style={{ marginTop: linked.length ? 8 : 0 }}>
+              <div style={{ fontWeight: 600 }}>已取消：</div>
+              {ignored.map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>,
+          );
+        }
+        if (pending.length) {
+          sections.push(
+            <div key="pending" style={{ marginTop: linked.length || ignored.length ? 8 : 0 }}>
+              <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>未关联：</span>
+                <Button
+                  size="small"
+                  type="link"
+                  style={{ padding: 0 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openIgnorePendingModal(record.noteId);
+                  }}
+                >
+                  批量忽略
+                </Button>
+              </div>
+              {pending.map((line, idx) => (
+                <div key={idx}>{line}</div>
+              ))}
+            </div>,
+          );
+        }
+        return (
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            {sections.length ? sections : <Text type="secondary">-</Text>}
+          </div>
+        );
+      },
+    },
     // 笔记ID/标题在“笔记”列展示，这里去掉单独列
     {
       title: '品牌',
@@ -491,6 +649,16 @@ export default function ProductLinkingPage() {
             >
               关联/覆盖
             </Button>
+            <Button
+              size="small"
+              type="link"
+              onClick={() => {
+                loadProducts(brandKey).catch(() => undefined);
+                handleOpenAddLinkModal(record);
+              }}
+            >
+              新增关联
+            </Button>
             <Button size="small" type="link" onClick={() => handleOpenUnlinkModal([record.id])}>
               取消关联
             </Button>
@@ -539,10 +707,25 @@ export default function ProductLinkingPage() {
 
   const resetSelection = () => setSelectedRowKeys([]);
 
+  // noteId -> 同一笔记下的候选列表，便于“所有商品”列聚合展示
+  const groupedByNoteId = useMemo(() => {
+    if (allCandidatesMap.size) return allCandidatesMap;
+    const map = new Map<string, CandidateRecord[]>();
+    data.forEach((item) => {
+      if (!map.has(item.noteId)) {
+        map.set(item.noteId, []);
+      }
+      map.get(item.noteId)!.push(item);
+    });
+    return map;
+  }, [data, keyword, allCandidatesMap]);
+
   const loadCandidates = async (pageValue = page, pageSizeValue = pageSize) => {
     if (!brandFilter) {
       setData([]);
       setTotal(0);
+      setAllCandidatesMap(new Map());
+      setProductMap({});
       setPage(pageValue);
       setPageSize(pageSizeValue);
       resetSelection();
@@ -565,6 +748,20 @@ export default function ProductLinkingPage() {
       const res = await fetchJson(`/api/note-products?${params.toString()}`);
       const listRaw = Array.isArray(res?.list) ? res.list : res || [];
       const list: CandidateRecord[] = (listRaw || []).map(mapCandidate);
+      const siblingsRaw = res?.siblingsByNoteId || {};
+      const mapAll = new Map<string, CandidateRecord[]>();
+      if (siblingsRaw && typeof siblingsRaw === 'object') {
+        Object.entries(siblingsRaw).forEach(([noteId, arr]) => {
+          if (!Array.isArray(arr)) return;
+          mapAll.set(noteId, arr.map(mapCandidate));
+        });
+      }
+      setAllCandidatesMap(mapAll);
+      if (res?.productMap && typeof res.productMap === 'object') {
+        setProductMap(res.productMap as Record<string, string>);
+      } else {
+        setProductMap({});
+      }
       const totalRaw = typeof res?.total === 'number' ? res.total : list.length;
       setData(list);
       setTotal(totalRaw);
@@ -699,17 +896,11 @@ export default function ProductLinkingPage() {
               onChange={(e) => setKeyword(e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <Button type="primary" onClick={() => loadCandidates(1, pageSize)} style={{ marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <Button type="primary" onClick={() => loadCandidates(1, pageSize)}>
               搜索
             </Button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <Button
-              onClick={() => setCreateProductModalOpen(true)}
-              disabled={!brandFilter}
-              style={{ marginBottom: 6 }}
-            >
+            <Button onClick={() => setCreateProductModalOpen(true)} disabled={!brandFilter}>
               新建商品
             </Button>
           </div>
@@ -756,7 +947,13 @@ export default function ProductLinkingPage() {
           rowSelection={rowSelection}
           columns={columns}
           dataSource={data}
-          locale={{ emptyText: brandFilter ? '暂无数据' : '请先选择品牌' }}
+          locale={{
+            emptyText: brandFilter ? (
+              '暂无数据'
+            ) : (
+              <Text strong style={{ color: '#fa541c', fontSize: 16 }}>请先选择品牌</Text>
+            ),
+          }}
           pagination={{
             pageSize,
             current: page,
@@ -792,6 +989,73 @@ export default function ProductLinkingPage() {
             }))}
           />
         </Space>
+      </Modal>
+
+      {/* 新增候选并关联弹窗 */}
+      <Modal
+        open={addLinkModalOpen}
+        title="新增候选并关联"
+        okText="确认新增并关联"
+        confirmLoading={addSubmitting}
+        onCancel={() => {
+          setAddLinkModalOpen(false);
+          setAddTargetNote(null);
+          setAddSelectedProductId(undefined);
+        }}
+        onOk={doAddLink}
+      >
+        {addTargetNote ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <div>
+              <div style={{ marginBottom: 4 }}>笔记</div>
+              <Space>
+                <Text strong>{addTargetNote.noteTitle || '未命名笔记'}</Text>
+                {addTargetNote.xhsNoteId && (
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() =>
+                      window.open(
+                        addTargetNote.xhsNoteLink ||
+                          `https://www.xiaohongshu.com/explore/${addTargetNote.xhsNoteId}`,
+                        '_blank',
+                      )
+                    }
+                  >
+                    查看小红书
+                  </Button>
+                )}
+              </Space>
+            </div>
+            <div>
+              <div style={{ marginBottom: 4 }}>品牌</div>
+              <Text>{addTargetNote.brandName}</Text>
+            </div>
+            <div>
+              <div style={{ marginBottom: 4 }}>选择已有商品</div>
+              <Select
+                allowClear
+                placeholder="选择商品"
+                style={{ width: '100%' }}
+                value={addSelectedProductId}
+                onChange={(v) => setAddSelectedProductId(v)}
+                options={products
+                  .filter(
+                    (p) => `${p.brandId}#${p.brandName}` === `${addTargetNote.brandId}#${addTargetNote.brandName}`,
+                  )
+                  .map((p) => ({
+                    label: p.productName,
+                    value: p.productId,
+                  }))}
+              />
+            </div>
+            <Text type="secondary">
+              将为当前笔记新增一条候选（名称=所选商品名），并立即关联到该商品；同名候选已存在时会报错。
+            </Text>
+          </Space>
+        ) : (
+          <Text type="secondary">未选择笔记</Text>
+        )}
       </Modal>
 
       {/* 新建商品弹窗 */}
@@ -843,6 +1107,40 @@ export default function ProductLinkingPage() {
         onOk={doIgnore}
       >
         确认将选中的记录标记为已忽略吗？
+      </Modal>
+
+      {/* 未关联候选批量忽略弹窗 */}
+      <Modal
+        open={ignorePendingModalOpen}
+        title="批量忽略未关联候选"
+        okText="确认忽略"
+        confirmLoading={ignoreSubmitting}
+        onCancel={() => {
+          setIgnorePendingModalOpen(false);
+          setIgnorePendingList([]);
+          setIgnoreSelectedIds([]);
+        }}
+        onOk={submitIgnorePending}
+      >
+        {ignorePendingList.length === 0 ? (
+          <Text type="secondary">暂无未关联候选</Text>
+        ) : (
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Checkbox.Group
+              value={ignoreSelectedIds}
+              onChange={(vals) => setIgnoreSelectedIds(vals as string[])}
+              style={{ width: '100%' }}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {ignorePendingList.map((item) => (
+                  <Checkbox key={item.id} value={item.id}>
+                    {item.productAliasName}
+                  </Checkbox>
+                ))}
+              </Space>
+            </Checkbox.Group>
+          </Space>
+        )}
       </Modal>
     </div>
   );
