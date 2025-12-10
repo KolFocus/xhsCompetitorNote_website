@@ -102,7 +102,7 @@ export function StatusListModal({
       onCancel={() => statusList.setStatusModalVisible(false)}
       footer={null}
       width={1400}
-      destroyOnClose
+      destroyOnHidden
       styles={{
         body: {
           height: '600px',

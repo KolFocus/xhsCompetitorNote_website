@@ -67,7 +67,6 @@ const { Text } = Typography;
 const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
 
 const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
-  console.log('song getProxiedImageUrl url', url);
   if (!url) return undefined;
   if (url.includes('xhstool.cc/api/proxy')) return url;
   if (url.startsWith('/')) {
@@ -325,12 +324,6 @@ export default function ReportsPage() {
         setTotal(totalCount);
         setPage(data.data.page ?? pageValue);
         setPageSize(data.data.pageSize ?? pageSizeValue);
-        console.log('loadNotes result:', { 
-          page: pageValue, 
-          pageSize: pageSizeValue, 
-          total: totalCount, 
-          listLength: notesList.length 
-        });
       }
     } catch (error) {
       message.error('加载笔记列表失败');
@@ -1123,7 +1116,9 @@ export default function ReportsPage() {
   if (reportsLoading) {
     return (
       <div style={{ textAlign: 'center', padding: '200px 0' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" tip="加载中...">
+          <div style={{ width: 1, height: 1 }} />
+        </Spin>
       </div>
     );
   }

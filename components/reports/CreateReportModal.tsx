@@ -24,13 +24,17 @@ export default function CreateReportModal({
   onSuccess,
 }: CreateReportModalProps) {
   const [form] = Form.useForm();
+  const reportName = Form.useWatch('reportName', form);
   const [brands, setBrands] = useState<Brand[]>([]);
-  const [brandIds, setBrandIds] = useState<string[]>([]);
+  const [brandId, setBrandId] = useState<string | undefined>(undefined);
+  const [products, setProducts] = useState<{ ProductId: string; ProductName: string }[]>([]);
+  const [productIds, setProductIds] = useState<string[]>([]);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [notesCount, setNotesCount] = useState<number | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [brandsLoading, setBrandsLoading] = useState(false);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // 加载品牌列表
   useEffect(() => {
@@ -58,7 +62,7 @@ export default function CreateReportModal({
 
   // 计算笔记数量
   const handleCalculateNotes = useCallback(async () => {
-    if (brandIds.length === 0) {
+    if (!brandId) {
       setNotesCount(null);
       return;
     }
@@ -69,9 +73,10 @@ export default function CreateReportModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brandKeys: brandIds,
+          brandKeys: [brandId],
           startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
           endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
+          productIds: productIds.length ? productIds : undefined,
         }),
       });
       const data = await response.json();
@@ -87,19 +92,43 @@ export default function CreateReportModal({
     } finally {
       setCalculating(false);
     }
-  }, [brandIds, dateRange]);
+  }, [brandId, dateRange, productIds]);
 
-  // 监听品牌和时间范围变化
+  // 监听品牌/商品/时间范围变化
   useEffect(() => {
     if (open) {
       handleCalculateNotes();
     }
   }, [handleCalculateNotes, open]);
 
+  // 加载商品列表（基于品牌）
+  const loadProducts = async (brandKey: string) => {
+    const [bId, bName] = brandKey.split('#KF#');
+    if (!bId || !bName) return;
+    setProductsLoading(true);
+    try {
+      const res = await fetch(
+        `/api/products?brandId=${encodeURIComponent(bId)}&brandName=${encodeURIComponent(bName)}&pageSize=500`,
+      );
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '加载商品失败');
+      }
+      setProducts(data.data || []);
+    } catch (err: any) {
+      message.error(err?.message || '加载商品失败');
+      setProducts([]);
+    } finally {
+      setProductsLoading(false);
+    }
+  };
+
   // 重置表单
   const handleCancel = () => {
     form.resetFields();
-    setBrandIds([]);
+    setBrandId(undefined);
+    setProducts([]);
+    setProductIds([]);
     setDateRange(null);
     setNotesCount(null);
     setCalculating(false);
@@ -111,7 +140,7 @@ export default function CreateReportModal({
     try {
       const values = await form.validateFields();
       
-      if (brandIds.length === 0) {
+      if (!brandId) {
         message.error('至少需要选择1个品牌');
         return;
       }
@@ -132,7 +161,8 @@ export default function CreateReportModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportName: values.reportName,
-          brandKeys: brandIds,
+          brandKeys: [brandId],
+          productIds: productIds.length ? productIds : undefined,
           startDate: dateRange?.[0]?.format('YYYY-MM-DD'),
           endDate: dateRange?.[1]?.format('YYYY-MM-DD'),
         }),
@@ -159,8 +189,8 @@ export default function CreateReportModal({
 
   // 按钮可用条件：报告名称已填写（8-20字）且至少选择1个品牌，且计算完成，且至少有一条有效笔记
   const isButtonDisabled =
-    !form.getFieldValue('reportName') ||
-    brandIds.length === 0 ||
+    !reportName ||
+    !brandId ||
     calculating ||
     notesCount === null ||
     notesCount === 0;
@@ -206,15 +236,18 @@ export default function CreateReportModal({
           <Input placeholder="请输入报告名称（8-20字）" />
         </Form.Item>
 
-        <Form.Item
-          label="品牌选择"
-          required
-        >
+        <Form.Item label="品牌选择" required>
           <Select
-            mode="multiple"
-            placeholder="请选择品牌（至少选择1个）"
-            value={brandIds}
-            onChange={setBrandIds}
+            placeholder="请选择品牌"
+            value={brandId}
+            onChange={(value) => {
+              setBrandId(value);
+              setProductIds([]);
+              setProducts([]);
+              if (value) {
+                loadProducts(value);
+              }
+            }}
             loading={brandsLoading}
             showSearch
             filterOption={(input, option) =>
@@ -224,6 +257,26 @@ export default function CreateReportModal({
               value: `${brand.BrandId}#KF#${brand.BrandName}`,
               label: brand.BrandName,
             }))}
+          />
+        </Form.Item>
+
+        <Form.Item label="商品选择">
+          <Select
+            mode="multiple"
+            placeholder={brandId ? '可多选，可不选' : '请先选择品牌'}
+            value={productIds}
+            onChange={setProductIds}
+            loading={productsLoading}
+            disabled={!brandId}
+            showSearch
+            filterOption={(input, option) =>
+              (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+            }
+            options={products.map((p) => ({
+              value: p.ProductId,
+              label: p.ProductName,
+            }))}
+            allowClear
           />
         </Form.Item>
 
@@ -255,7 +308,7 @@ export default function CreateReportModal({
             <div style={{ color: '#666', fontSize: 14 }}>
               共找到 {notesCount} 条笔记
             </div>
-          ) : brandIds.length === 0 ? (
+          ) : !brandId ? (
             <div style={{ color: '#999', fontSize: 14 }}>
               请选择品牌以计算笔记数量
             </div>

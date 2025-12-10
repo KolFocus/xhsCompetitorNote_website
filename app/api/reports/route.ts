@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { reportName, brandKeys, startDate, endDate } = body;
+    const { reportName, brandKeys, startDate, endDate, productIds } = body;
 
     // 验证参数
     if (!reportName || typeof reportName !== 'string') {
@@ -170,9 +170,19 @@ export async function POST(request: NextRequest) {
       paramIndex++;
     }
 
+    // 按商品过滤：仅统计关联到指定商品的笔记；未选商品则不过滤
+    if (productIds && Array.isArray(productIds) && productIds.length > 0) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM qiangua_note_product_candidate c
+        WHERE c."NoteId" = n."NoteId" AND c."LinkedProductId" = ANY($${paramIndex}::uuid[])
+      )`);
+      queryParams.push(productIds);
+      paramIndex++;
+    }
+
     const sql = `
       SELECT "NoteId"
-      FROM qiangua_note_info
+      FROM qiangua_note_info n
       WHERE ${conditions.join(' AND ')}
     `;
 

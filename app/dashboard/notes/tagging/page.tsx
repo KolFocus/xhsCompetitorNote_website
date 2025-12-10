@@ -1177,7 +1177,7 @@ const NoteTaggingPage: React.FC = () => {
         }}
         onOk={handleBulkTagging}
         okButtonProps={{ loading: bulkModalLoading }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Text type="secondary">

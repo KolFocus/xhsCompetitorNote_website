@@ -157,7 +157,7 @@ export default function BloggerMatrixConfigModal({ open, reportId, onCancel, onS
       width={600}
       okText="保存"
       cancelText="取消"
-      destroyOnClose
+      destroyOnHidden
       maskClosable={false}
     >
       <Spin spinning={loading}>

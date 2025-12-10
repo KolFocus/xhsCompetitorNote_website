@@ -122,7 +122,7 @@ const TagSetModal: React.FC<TagSetModalProps> = ({
       confirmLoading={loading}
       onCancel={onClose}
       onOk={handleOk}
-      destroyOnClose
+        destroyOnHidden
     >
       <Form
         form={form}
