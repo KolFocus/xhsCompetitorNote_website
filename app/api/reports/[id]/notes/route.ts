@@ -5,6 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { queryPg } from '@/lib/postgres';
+import { PRODUCT_LINKING_IGNORE_UUID } from '@/lib/constants/productLinking';
 import { parseKeywordFiltersFromParams, KEYWORD_SEARCH_COLUMNS } from '@/lib/utils/keywordSearch';
 
 export async function GET(
@@ -222,9 +224,34 @@ export async function GET(
           aiContentType: note.AiContentType ?? null,
           aiRelatedProducts: note.AiRelatedProducts ?? null,
           aiSummary: note.AiSummary ?? null,
+          linkedProducts: [] as string[],
         };
       })
       .filter((note: any) => note !== null);
+
+    // 补充关联商品（标准商品名）
+    const noteIdsForLookup = notes.map((n: any) => n.noteId).filter(Boolean);
+    if (noteIdsForLookup.length) {
+      const linkedSql = `
+        SELECT
+          c."NoteId",
+          ARRAY_AGG(DISTINCT p."ProductName") AS product_names
+        FROM qiangua_note_product_candidate c
+        JOIN qiangua_product p ON p."ProductId" = c."LinkedProductId"
+        WHERE c."NoteId" = ANY($1::text[])
+          AND c."LinkedProductId" IS NOT NULL
+          AND c."LinkedProductId" <> $2
+        GROUP BY c."NoteId"
+      `;
+      const linkedRows = await queryPg(linkedSql, [noteIdsForLookup, PRODUCT_LINKING_IGNORE_UUID]);
+      const linkedMap = new Map<string, string[]>();
+      linkedRows?.forEach((row: any) => {
+        linkedMap.set(row.NoteId, row.product_names || []);
+      });
+      notes.forEach((n: any) => {
+        n.linkedProducts = linkedMap.get(n.noteId) || [];
+      });
+    }
 
     // 应用排序
     const fieldMap: Record<string, string> = {

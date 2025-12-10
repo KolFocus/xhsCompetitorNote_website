@@ -126,6 +126,7 @@ interface Note {
   aiContentType: string | null;
   aiRelatedProducts: string | null;
   aiSummary: string | null;
+  linkedProducts?: string[];
 }
 
 export default function ReportsPage() {
@@ -843,6 +844,16 @@ export default function ReportsPage() {
                         </Text>
                       </div>
                     )}
+                  {(record.linkedProducts?.length ?? 0) > 0 && (
+                    <div>
+                      <Text strong style={{ fontSize: 16 }}>
+                        关联商品：
+                      </Text>
+                      <Text style={{ fontSize: 16 }}>
+                        {record.linkedProducts!.join('，')}
+                      </Text>
+                    </div>
+                  )}
                     {record.aiSummary && (
                       <div>
                         <Text strong style={{ fontSize: 16 }}>
