@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Table, Button, Space, Typography, message, Input, Tooltip } from 'antd';
+import { Card, Table, Button, Space, Typography, message, Input, Tooltip, Modal } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { useRouter } from 'next/navigation';
@@ -36,11 +36,21 @@ interface BrandResponseItem {
   DateCoverage?: any; // 可能是 JSON 字符串、数组或 null
 }
 
+interface ProductWithCount {
+  ProductId: string;
+  ProductName: string;
+  NoteCount: number;
+}
+
 export default function BrandListPage() {
   const router = useRouter();
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchValue, setSearchValue] = useState('');
+  const [productModalOpen, setProductModalOpen] = useState(false);
+  const [productLoading, setProductLoading] = useState(false);
+  const [currentBrand, setCurrentBrand] = useState<{ BrandId: string; BrandName: string } | null>(null);
+  const [products, setProducts] = useState<ProductWithCount[]>([]);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -151,6 +161,30 @@ export default function BrandListPage() {
     router.push(`/dashboard/notes?${query}`);
   };
 
+  const handleViewAllProducts = async (brand: BrandRecord) => {
+    setCurrentBrand({ BrandId: brand.BrandId, BrandName: brand.BrandName });
+    setProductModalOpen(true);
+    setProductLoading(true);
+    try {
+      const res = await fetch(
+        `/api/products/with-note-count?brandId=${encodeURIComponent(brand.BrandId)}&brandName=${encodeURIComponent(
+          brand.BrandName,
+        )}`,
+      );
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || '加载商品失败');
+      }
+      setProducts(data.data || []);
+    } catch (err: any) {
+      console.error('Load products with count failed:', err);
+      message.error(err?.message || '加载商品失败');
+      setProducts([]);
+    } finally {
+      setProductLoading(false);
+    }
+  };
+
   /**
    * 渲染日期覆盖时间段
    */
@@ -245,6 +279,9 @@ export default function BrandListPage() {
           <Button type="link" onClick={() => handleViewNotes(record)}>
             所有笔记
           </Button>
+          <Button type="link" onClick={() => handleViewAllProducts(record)}>
+            全部商品
+          </Button>
         </Space>
       ),
     },
@@ -285,6 +322,26 @@ export default function BrandListPage() {
           pagination={{ pageSize: 10 }}
         />
       </Card>
+
+      <Modal
+        open={productModalOpen}
+        onCancel={() => setProductModalOpen(false)}
+        footer={null}
+        title={currentBrand ? `${currentBrand.BrandName} 的全部商品` : '全部商品'}
+        width={640}
+      >
+        <Table<ProductWithCount>
+          rowKey="ProductId"
+          loading={productLoading}
+          dataSource={products}
+          pagination={false}
+          size="small"
+          columns={[
+            { title: '商品名称', dataIndex: 'ProductName', key: 'ProductName' },
+            { title: '关联笔记数', dataIndex: 'NoteCount', key: 'NoteCount', width: 120 },
+          ]}
+        />
+      </Modal>
     </div>
   );
 }
