@@ -539,6 +539,7 @@ export const AI_ERROR_TYPES = {
   TIMEOUT_ERROR: 'TimeoutError',      // 超时错误（不可重试）
   CONTENT_EMPTY: 'ContentEmpty',      // 内容为空（不可重试）
   LOCK_CONFLICT: 'LockConflict',      // 锁定冲突（特殊处理）
+  VIDEO_NOT_SUPPORTED: 'VideoNotSupported', // 视频笔记不支持（不可重试）
   UNKNOWN: 'Unknown',                 // 未知错误（可重试）
 } as const;
 
@@ -639,6 +640,11 @@ export const classifyErrorType = (errorMessage: string | Error, error?: any): st
   // 内容为空
   if (messageLower.includes('内容为空')) {
     return AI_ERROR_TYPES.CONTENT_EMPTY;
+  }
+
+  // 视频笔记不支持
+  if (messageLower.includes('不支持视频') || messageLower.includes('video not supported')) {
+    return AI_ERROR_TYPES.VIDEO_NOT_SUPPORTED;
   }
 
   // 默认未知错误
