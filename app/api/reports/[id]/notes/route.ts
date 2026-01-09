@@ -71,62 +71,78 @@ export async function GET(
 
     // 构建查询 - 从 qiangua_report_note_rel 开始，关联 qiangua_note_info
     // 注意：先查询所有符合条件的记录，然后在内存中筛选和分页
-    let query = supabase
-      .from('qiangua_report_note_rel')
-      .select(`
-        NoteId,
-        Status,
-        CreatedAt,
-        qiangua_note_info (
+    // 注意：Supabase 默认限制 1000 条，需要分页获取全部数据
+    const PAGE_SIZE = 1000;
+    let allData: any[] = [];
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const { data: pageData, error: pageError } = await supabase
+        .from('qiangua_report_note_rel')
+        .select(`
           NoteId,
-          Title,
-          Content,
-          XhsTitle,
-          XhsContent,
-          CoverImage,
-          XhsNoteUrl,
-          NoteType,
-          IsBusiness,
-          IsAdNote,
-          PublishTime,
-          PubDate,
-          LikedCount,
-          CollectedCount,
-          CommentsCount,
-          ViewCount,
-          ShareCount,
-          BloggerId,
-          BloggerNickName,
-          BigAvatar,
-          SmallAvatar,
-          BrandId,
-          BrandIdKey,
-          BrandName,
-          VideoDuration,
-          Fans,
-          AdPrice,
-          OfficialVerified,
-          XhsNoteLink,
-          XhsUserId,
-          XhsNoteInvalid,
-          AiContentType,
-          AiRelatedProducts,
-          AiSummary
-        )
-      `, { count: 'exact' })
-      .eq('ReportId', reportId)
-      .eq('Status', status);
+          Status,
+          CreatedAt,
+          qiangua_note_info (
+            NoteId,
+            Title,
+            Content,
+            XhsTitle,
+            XhsContent,
+            CoverImage,
+            XhsNoteUrl,
+            NoteType,
+            IsBusiness,
+            IsAdNote,
+            PublishTime,
+            PubDate,
+            LikedCount,
+            CollectedCount,
+            CommentsCount,
+            ViewCount,
+            ShareCount,
+            BloggerId,
+            BloggerNickName,
+            BigAvatar,
+            SmallAvatar,
+            BrandId,
+            BrandIdKey,
+            BrandName,
+            VideoDuration,
+            Fans,
+            AdPrice,
+            OfficialVerified,
+            XhsNoteLink,
+            XhsUserId,
+            XhsNoteInvalid,
+            AiContentType,
+            AiRelatedProducts,
+            AiSummary
+          )
+        `)
+        .eq('ReportId', reportId)
+        .eq('Status', status)
+        .range(offset, offset + PAGE_SIZE - 1);
 
-    // 先查询所有符合条件的记录（不使用 range，因为需要在内存中筛选）
-    const { data, error, count } = await query;
+      if (pageError) {
+        console.error('Error fetching report notes:', pageError);
+        return NextResponse.json(
+          { success: false, error: pageError.message },
+          { status: 500 }
+        );
+      }
 
-    if (error) {
-      console.error('Error fetching report notes:', error);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
+      if (pageData && pageData.length > 0) {
+        allData = allData.concat(pageData);
+        offset += PAGE_SIZE;
+        hasMore = pageData.length === PAGE_SIZE;
+      } else {
+        hasMore = false;
+      }
     }
+
+    const data = allData;
 
     // 解析 brandKey
     let brandId: string | null = null;

@@ -174,55 +174,74 @@ export async function GET(
     }
 
     // 步骤1：获取报告内所有有效笔记
-    const { data: notesData, error: notesError } = await supabase
-      .from('qiangua_report_note_rel')
-      .select(`
-        Status,
-        CreatedAt,
-        qiangua_note_info (
-          NoteId,
-          Title,
-          Content,
-          CoverImage,
-          NoteType,
-          IsBusiness,
-          IsAdNote,
-          PublishTime,
-          LikedCount,
-          CollectedCount,
-          CommentsCount,
-          ViewCount,
-          ShareCount,
-          AdPrice,
-          BloggerId,
-          BloggerNickName,
-          SmallAvatar,
-          BigAvatar,
-          OfficialVerified,
-          Fans,
-          BrandId,
-          BrandIdKey,
-          BrandName,
-          VideoDuration,
-          XhsUserId,
-          XhsNoteLink,
-          XhsTitle,
-          XhsContent,
-          AiContentType,
-          AiRelatedProducts,
-          AiSummary
-        )
-      `)
-      .eq('ReportId', reportId)
-      .eq('Status', 'active');
+    // 注意：Supabase 默认限制 1000 条，需要分页获取全部数据
+    const PAGE_SIZE = 1000;
+    let allNotesData: any[] = [];
+    let from = 0;
+    let hasMore = true;
 
-    if (notesError) {
-      console.error('Error fetching notes:', notesError);
-      return NextResponse.json(
-        { success: false, error: notesError.message },
-        { status: 500 }
-      );
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('qiangua_report_note_rel')
+        .select(`
+          Status,
+          CreatedAt,
+          qiangua_note_info (
+            NoteId,
+            Title,
+            Content,
+            CoverImage,
+            NoteType,
+            IsBusiness,
+            IsAdNote,
+            PublishTime,
+            LikedCount,
+            CollectedCount,
+            CommentsCount,
+            ViewCount,
+            ShareCount,
+            AdPrice,
+            BloggerId,
+            BloggerNickName,
+            SmallAvatar,
+            BigAvatar,
+            OfficialVerified,
+            Fans,
+            BrandId,
+            BrandIdKey,
+            BrandName,
+            VideoDuration,
+            XhsUserId,
+            XhsNoteLink,
+            XhsTitle,
+            XhsContent,
+            AiContentType,
+            AiRelatedProducts,
+            AiSummary
+          )
+        `)
+        .eq('ReportId', reportId)
+        .eq('Status', 'active')
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('Error fetching notes:', error);
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 }
+        );
+      }
+
+      if (data && data.length > 0) {
+        allNotesData = allNotesData.concat(data);
+        from += PAGE_SIZE;
+        hasMore = data.length === PAGE_SIZE;
+      } else {
+        hasMore = false;
+      }
     }
+
+    const notesData = allNotesData;
 
     // 过滤并格式化笔记数据
     const notes: NoteInfoRecord[] = [];
@@ -306,23 +325,42 @@ export async function GET(
     }
 
     // 步骤3：获取标签关联关系
-    const { data: tagRelationsData, error: tagRelationsError } = await supabase
-      .from('qiangua_note_tag')
-      .select(`
-        NoteId,
-        TagId,
-        CreatedAt
-      `)
-      .in('TagId', tagIds)
-      .in('NoteId', notes.map((n) => n.NoteId));
+    // 注意：Supabase 默认限制 1000 条，需要分页获取全部数据
+    const noteIds = notes.map((n) => n.NoteId);
+    let allTagRelationsData: any[] = [];
+    from = 0;
+    hasMore = true;
 
-    if (tagRelationsError) {
-      console.error('Error fetching tag relations:', tagRelationsError);
-      return NextResponse.json(
-        { success: false, error: tagRelationsError.message },
-        { status: 500 }
-      );
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('qiangua_note_tag')
+        .select(`
+          NoteId,
+          TagId,
+          CreatedAt
+        `)
+        .in('TagId', tagIds)
+        .in('NoteId', noteIds)
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('Error fetching tag relations:', error);
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 }
+        );
+      }
+
+      if (data && data.length > 0) {
+        allTagRelationsData = allTagRelationsData.concat(data);
+        from += PAGE_SIZE;
+        hasMore = data.length === PAGE_SIZE;
+      } else {
+        hasMore = false;
+      }
     }
+
+    const tagRelationsData = allTagRelationsData;
 
     // 格式化标签关联关系
     const tagRelations: NoteTagRelation[] = [];
