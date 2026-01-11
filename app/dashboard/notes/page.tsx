@@ -488,15 +488,19 @@ const [stats, setStats] = useState<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBrand, selectedBlogger, dateRange, pageSize, sortField, sortOrder]);
 
-  // 保存显示AI分析的状态到 localStorage
+  // 首次加载时从 localStorage 读取
   useEffect(() => {
-    // 首次加载时读取本地存储
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('showAiAnalysis');
       if (saved === 'true') {
         setShowAiAnalysis(true);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 保存显示AI分析的状态到 localStorage
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('showAiAnalysis', String(showAiAnalysis));
     }
