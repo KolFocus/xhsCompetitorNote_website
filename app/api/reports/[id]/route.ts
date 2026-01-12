@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { queryPg } from '@/lib/postgres';
 
 export async function GET(
   request: NextRequest,
@@ -54,28 +55,20 @@ export async function GET(
       .eq('ReportId', reportId)
       .eq('Status', 'ignored');
 
-    // 获取时间范围（包括所有笔记）
-    const { data: timeRangeData } = await supabase
-      .from('qiangua_report_note_rel')
-      .select('qiangua_note_info(PublishTime)')
-      .eq('ReportId', reportId);
+    // 获取时间范围（使用 JOIN 查询，不受 1000 条限制）
+    const timeRangeQuery = `
+      SELECT 
+        MIN(n."PublishTime") as earliest_time,
+        MAX(n."PublishTime") as latest_time
+      FROM qiangua_report_note_rel r
+      INNER JOIN qiangua_note_info n ON r."NoteId" = n."NoteId"
+      WHERE r."ReportId" = $1
+        AND n."PublishTime" IS NOT NULL
+    `;
 
-    // 从查询结果中提取所有有效的发布时间
-    const publishTimes = timeRangeData
-      ?.map((item: any) => item.qiangua_note_info?.PublishTime)
-      .filter((time: any) => time != null) || [];
-
-    // 计算最早和最晚时间
-    let earliestNoteTime: string | null = null;
-    let latestNoteTime: string | null = null;
-    
-    if (publishTimes.length > 0) {
-      const sortedTimes = publishTimes.sort((a: string, b: string) => 
-        new Date(a).getTime() - new Date(b).getTime()
-      );
-      earliestNoteTime = sortedTimes[0];
-      latestNoteTime = sortedTimes[sortedTimes.length - 1];
-    }
+    const timeRangeRows = await queryPg(timeRangeQuery, [reportId]);
+    const earliestNoteTime = timeRangeRows?.[0]?.earliest_time || null;
+    const latestNoteTime = timeRangeRows?.[0]?.latest_time || null;
 
     // 获取品牌列表（不去重）
     const { data: brandsData } = await supabase
