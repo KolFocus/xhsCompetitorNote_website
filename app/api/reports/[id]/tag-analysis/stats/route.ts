@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { queryPg } from '@/lib/postgres';
 
 interface NoteInfoRecord {
   NoteId: string;
@@ -325,42 +326,32 @@ export async function GET(
     }
 
     // 步骤3：获取标签关联关系
-    // 注意：Supabase 默认限制 1000 条，需要分页获取全部数据
+    // 使用 queryPg 避免 Supabase .in() 的数组大小限制
     const noteIds = notes.map((n) => n.NoteId);
-    let allTagRelationsData: any[] = [];
-    from = 0;
-    hasMore = true;
+    
+    let tagRelationsData: any[] = [];
+    
+    if (noteIds.length > 0 && tagIds.length > 0) {
+      const tagRelationsQuery = `
+        SELECT 
+          "NoteId",
+          "TagId",
+          "CreatedAt"
+        FROM qiangua_note_tag
+        WHERE "TagId" = ANY($1::uuid[])
+          AND "NoteId" = ANY($2::text[])
+      `;
 
-    while (hasMore) {
-      const { data, error } = await supabase
-        .from('qiangua_note_tag')
-        .select(`
-          NoteId,
-          TagId,
-          CreatedAt
-        `)
-        .in('TagId', tagIds)
-        .in('NoteId', noteIds)
-        .range(from, from + PAGE_SIZE - 1);
-
-      if (error) {
+      try {
+        tagRelationsData = await queryPg(tagRelationsQuery, [tagIds, noteIds]);
+      } catch (error: any) {
         console.error('Error fetching tag relations:', error);
         return NextResponse.json(
           { success: false, error: error.message },
           { status: 500 }
         );
       }
-
-      if (data && data.length > 0) {
-        allTagRelationsData = allTagRelationsData.concat(data);
-        from += PAGE_SIZE;
-        hasMore = data.length === PAGE_SIZE;
-      } else {
-        hasMore = false;
-      }
     }
-
-    const tagRelationsData = allTagRelationsData;
 
     // 格式化标签关联关系
     const tagRelations: NoteTagRelation[] = [];
