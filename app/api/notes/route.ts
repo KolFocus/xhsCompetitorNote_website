@@ -342,7 +342,7 @@ async function queryNotesWithPg(params: {
         n."BigAvatar", n."SmallAvatar", n."BrandId", n."BrandIdKey", n."BrandName",
         n."VideoDuration", n."CurrentUserIsFavorite", n."Fans", n."AdPrice",
         n."OfficialVerified", n."XhsContent", n."XhsNoteLink", n."XhsUserId", n."XhsNoteInvalid",
-        n."AiContentType", n."AiRelatedProducts", n."AiSummary", n."AiStatus", n."AiErr"
+        n."AiContentType", n."AiRelatedProducts", n."AiSummary", n."AiStatus", n."AiTag", n."AiErr"
       FROM qiangua_note_info n
       ${whereClause}
       ORDER BY n."${orderBy}" ${orderDir}

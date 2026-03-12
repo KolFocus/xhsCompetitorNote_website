@@ -154,3 +154,39 @@ export const executeChatAiAnalysis = async (
   };
 };
 
+/**
+ * 执行 ChatAI 内容类型判别（自定义 prompt + 笔记媒体），返回原始响应文本供解析 aiTag
+ */
+export const executeChatAiTagAnalysis = async (
+  note: NoteRecord,
+  prompt: string,
+  model: string,
+): Promise<string> => {
+  const mediaUrls = collectMediaUrls(note);
+  const payload = buildChatAiRequestPayload(prompt, mediaUrls, model);
+
+  const aiResponse = await fetch(AI_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${AI_API_TOKEN}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!aiResponse.ok) {
+    let errorText: string | null = null;
+    try {
+      errorText = await aiResponse.text();
+    } catch {
+      errorText = aiResponse.statusText;
+    }
+    throw new Error(
+      `ChatAI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
+    );
+  }
+
+  const responseBody = await aiResponse.json().catch(() => ({}));
+  return extractChatAiMessageText(responseBody);
+};
+

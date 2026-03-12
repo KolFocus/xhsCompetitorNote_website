@@ -143,3 +143,46 @@ function convertToOpenRouterModel(model: string): string {
   return converted;
 }
 
+/**
+ * 执行 OpenRouter 内容类型判别（自定义 prompt + 笔记媒体），返回原始响应文本供解析 aiTag
+ */
+export const executeOpenRouterAiTagAnalysis = async (
+  note: NoteRecord,
+  prompt: string,
+  model: string,
+): Promise<string> => {
+  const apiKey = await getSystemConfig(CONFIG_KEYS.OPENROUTER_API_KEY);
+  if (!apiKey || apiKey.trim().length === 0) {
+    throw new Error('OpenRouter API Key 未配置，请在系统设置中配置');
+  }
+
+  const client = new OpenRouter({ apiKey: apiKey.trim() });
+  const { imageUrls, videoUrls } = collectMediaUrlsSeparated(note);
+
+  if (videoUrls.length > 0) {
+    throw new Error('OpenRouter 不支持视频笔记分析，请切换到 ChatAI 提供商');
+  }
+
+  const openRouterModel = convertToOpenRouterModel(model);
+  const messageContent: any[] = [{ type: 'text', text: prompt }];
+  imageUrls.forEach((url) => {
+    messageContent.push({ type: 'image_url', imageUrl: { url } });
+  });
+
+  const completion = await client.chat.send(
+    {
+      model: openRouterModel,
+      messages: [{ role: 'user', content: messageContent as any }],
+      stream: false,
+    },
+    {
+      headers: {
+        'HTTP-Referer': 'https://xhs-competitor-note.com',
+        'X-Title': 'XHS Competitor Note System',
+      },
+    },
+  );
+
+  return (completion.choices[0]?.message?.content as string) || '';
+}
+

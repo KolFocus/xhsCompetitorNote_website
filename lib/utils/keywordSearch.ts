@@ -11,6 +11,7 @@ export const KEYWORD_SEARCH_COLUMNS = [
   'AiSummary',
   'AiContentType',
   'AiRelatedProducts',
+  'AiTag',
 ];
 
 const normalizeTerm = (term?: string | null) => term?.trim() || '';
