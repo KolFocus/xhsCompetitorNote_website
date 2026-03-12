@@ -599,12 +599,9 @@ const NoteTaggingPage: React.FC = () => {
   };
 
   const handleSmartTagStart = () => {
-    const tagIdForApi =
-      filterTagId && filterTagId !== '__untagged__'
-        ? filterTagId
-        : currentTagSet?.tags?.[0]?.tagId ?? null;
-    if (!tagIdForApi) {
-      message.warning('请先在标签筛选中选择一个具体标签，或确保当前标签系列下存在标签');
+    const tagSetIdForApi = selectedTagSetId || null;
+    if (!tagSetIdForApi) {
+      message.warning('请先选择标签系列');
       return;
     }
 
@@ -636,7 +633,7 @@ const NoteTaggingPage: React.FC = () => {
         fetch('/api/notes/ai-tagging', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ noteId, tagId: tagIdForApi }),
+          body: JSON.stringify({ noteId, tagSetId: tagSetIdForApi }),
         })
           .then((res) => res.json())
           .then((result) => {

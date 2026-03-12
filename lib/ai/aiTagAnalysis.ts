@@ -17,25 +17,12 @@ export interface TagSetInfoForAiTag {
 }
 
 /**
- * 通过 tagId 从数据库读取所属标签系列信息（目标类目、重点商品说明、内容类型列表）
+ * 通过 tagSetId 从数据库读取标签系列信息（目标类目、重点商品说明、内容类型列表）
  */
-export async function getTagSetInfoByTagId(
+export async function getTagSetInfoByTagSetId(
   supabase: SupabaseClient,
-  tagId: string,
+  tagSetId: string,
 ): Promise<TagSetInfoForAiTag | null> {
-  const { data: tag, error: tagError } = await supabase
-    .from('qiangua_tag')
-    .select('TagId, TagSetId')
-    .eq('TagId', tagId)
-    .single();
-
-  if (tagError || !tag) {
-    log.warning('getTagSetInfoByTagId: 标签不存在', { tagId }, tagError?.message);
-    return null;
-  }
-
-  const tagSetId = tag.TagSetId;
-
   const { data: tagSet, error: setError } = await supabase
     .from('qiangua_tag_set')
     .select('TagSetName, Description')
@@ -43,7 +30,11 @@ export async function getTagSetInfoByTagId(
     .single();
 
   if (setError || !tagSet) {
-    log.warning('getTagSetInfoByTagId: 标签系列不存在', { tagSetId }, setError?.message);
+    log.warning(
+      'getTagSetInfoByTagSetId: 标签系列不存在',
+      { tagSetId },
+      setError?.message,
+    );
     return null;
   }
 
@@ -54,7 +45,11 @@ export async function getTagSetInfoByTagId(
     .order('TagName', { ascending: true });
 
   if (tagsError) {
-    log.warning('getTagSetInfoByTagId: 查询标签列表失败', { tagSetId }, tagsError.message);
+    log.warning(
+      'getTagSetInfoByTagSetId: 查询标签列表失败',
+      { tagSetId },
+      tagsError.message,
+    );
   }
 
   const contentTypes = (tags || []).map((t: { TagName: string }) => t.TagName);
@@ -218,11 +213,11 @@ export async function updateNoteAiTag(
 }
 
 /**
- * 完整流程：根据 noteId + tagId 执行内容类型判别并写回 aiTag；失败时不写 aiTag
+ * 完整流程：根据 noteId + tagSetId 执行内容类型判别并写回 aiTag；失败时不写 aiTag
  */
 export async function processNoteAiTagging(
   noteId: string,
-  tagId: string,
+  tagSetId: string,
 ): Promise<{ success: boolean; aiTag?: string; error?: string }> {
   const supabase = getServiceSupabaseClient();
 
@@ -238,7 +233,7 @@ export async function processNoteAiTagging(
   }
 
   const note = noteRow as NoteRecord;
-  const tagSetInfo = await getTagSetInfoByTagId(supabase, tagId);
+  const tagSetInfo = await getTagSetInfoByTagSetId(supabase, tagSetId);
   if (!tagSetInfo) {
     return { success: false, error: '标签或标签系列不存在' };
   }
@@ -251,10 +246,10 @@ export async function processNoteAiTagging(
   try {
     const { aiTag } = await executeAiTagAnalysis(note, tagSetInfo);
     await updateNoteAiTag(supabase, noteId, aiTag);
-    log.info('AI 打标成功', { noteId, tagId, aiTag: aiTag.slice(0, 80) });
+    log.info('AI 打标成功', { noteId, tagSetId, aiTag: aiTag.slice(0, 80) });
     return { success: true, aiTag };
   } catch (error: any) {
-    log.warning('AI 打标失败，不写入 aiTag', { noteId, tagId }, error?.message);
+    log.warning('AI 打标失败，不写入 aiTag', { noteId, tagSetId }, error?.message);
     return { success: false, error: error?.message ?? 'AI 打标失败' };
   }
 }
