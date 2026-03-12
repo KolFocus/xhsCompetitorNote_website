@@ -10,6 +10,7 @@ export const AI_API_URL = 'https://api.chataiapi.com/v1/chat/completions';
 export const AI_API_TOKEN = 'sk-LFrg5PKsdEojeHkjNqtpAe6ehteBHuINJgGRlSIYeG1WObNL';
 export const AI_MODEL_DEFAULT = 'gemini-2.5-flash'; // 默认模型
 
+
 /**
  * 获取当前AI模型配置
  */
@@ -561,7 +562,7 @@ export const classifyErrorType = (errorMessage: string | Error, error?: any): st
   // 如果传入的是错误对象，提取消息和代码
   let message: string;
   let errorCode: string | undefined;
-  
+
   if (errorMessage instanceof Error) {
     message = errorMessage.message || '未知错误';
     errorCode = (errorMessage as any).code;
@@ -675,7 +676,7 @@ export const updateAiAnalysisFailure = async (
 ) => {
   // 判断是否为可重试的错误
   const canRetry = isRetryableError(errorType);
-  
+
   await supabase
     .from('qiangua_note_info')
     .update({
@@ -700,7 +701,7 @@ export const processNoteAiAnalysis = async (
 ) => {
   const supabase = getServiceSupabaseClient();
   const startTime = Date.now();
-  
+
   try {
     let note: NoteRecord;
 
@@ -787,23 +788,23 @@ export const processNoteAiAnalysis = async (
   } catch (error: any) {
     // 更新失败状态
     const errorMessage = error?.message || '未知错误';
-    const noteId = typeof noteIdOrRecord === 'string' 
-      ? noteIdOrRecord 
+    const noteId = typeof noteIdOrRecord === 'string'
+      ? noteIdOrRecord
       : noteIdOrRecord.NoteId;
-    
+
     // 分类错误类型（传入错误对象以检查错误代码）
     const errorType = classifyErrorType(errorMessage, error);
     const canRetry = isRetryableError(errorType);
-    
+
     // 更新失败状态到数据库
     await updateAiAnalysisFailure(supabase, noteId, errorMessage, errorType);
 
     const duration = Date.now() - startTime;
-    
+
     // 获取当前配置用于日志记录
     const provider = await getAiProvider();
     const model = await getAiModel();
-    
+
     // 根据是否可重试记录不同级别的日志
     if (canRetry) {
       log.warning('AI分析失败(可重试)', {
