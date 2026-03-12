@@ -14,6 +14,7 @@ import {
   Input,
   message,
   Modal,
+  Progress,
   Radio,
   Row,
   Select,
@@ -149,6 +150,16 @@ const NoteTaggingPage: React.FC = () => {
   const [bulkSelectedTagIds, setBulkSelectedTagIds] = useState<string[]>([]);
   const [smartTagModalOpen, setSmartTagModalOpen] = useState(false);
   const [smartTagScope, setSmartTagScope] = useState<'all' | 'untagged'>('untagged');
+  const [smartTagProgress, setSmartTagProgress] = useState<{
+    total: number;
+    completed: number;
+  } | null>(null);
+  const [smartAnalysisModalOpen, setSmartAnalysisModalOpen] = useState(false);
+  const [smartAnalysisScope, setSmartAnalysisScope] = useState<'all' | 'unanalyzed'>('unanalyzed');
+  const [smartAnalysisProgress, setSmartAnalysisProgress] = useState<{
+    total: number;
+    completed: number;
+  } | null>(null);
   const searchParams = useSearchParams();
   const lastAppliedQuery = useRef<{ tagSetId?: string | null; reportId?: string | null }>({
     tagSetId: undefined,
@@ -489,6 +500,29 @@ const NoteTaggingPage: React.FC = () => {
     });
   }, [noteList, showUnanalyzed, analyzingNoteIds]);
 
+  // 智能分析：已勾选笔记中有内容的条数 / 其中未分析（待分析或分析失败或无 AiSummary）的条数
+  const { canAnalyzeCount, unanalyzedCountForAnalysis } = useMemo(() => {
+    const selected = filteredNotes.filter((n) => selectedNoteIds.includes(n.NoteId));
+    const hasContent = (n: NoteRecord) => {
+      const c = n.XhsContent || (n as any).Content;
+      return c != null && String(c).trim() !== '';
+    };
+    const withContent = selected.filter(hasContent);
+    const unanalyzed = withContent.filter(
+      (n) =>
+        n.AiStatus === '待分析' ||
+        n.AiStatus === '分析失败' ||
+        !n.AiSummary ||
+        String(n.AiSummary ?? '').trim() === '',
+    );
+    return {
+      canAnalyzeCount: withContent.length,
+      unanalyzedCountForAnalysis: unanalyzed.length,
+    };
+  }, [filteredNotes, selectedNoteIds]);
+
+  const smartAnalysisDisabled = selectedNoteIds.length === 0 || canAnalyzeCount === 0;
+
   // 智能打标：在已勾选笔记中，有 AiSummary 的条数 / 其中未打标（AiTag 为空）的条数
   const { selectedWithSummaryCount: allCount, untaggedCount } = useMemo(() => {
     const selected = filteredNotes.filter((n) => selectedNoteIds.includes(n.NoteId));
@@ -503,9 +537,68 @@ const NoteTaggingPage: React.FC = () => {
 
   const smartTagDisabled = selectedNoteIds.length === 0 || allCount === 0;
 
-  const handleSmartTagStart = () => {
-    setSmartTagModalOpen(false);
+  const handleSmartAnalysisStart = () => {
+    const selected = filteredNotes.filter(
+      (n) =>
+        selectedNoteIds.includes(n.NoteId) &&
+        (n.XhsContent || (n as any).Content) != null &&
+        String((n.XhsContent || (n as any).Content) ?? '').trim() !== '',
+    );
+    const noteIdsToProcess =
+      smartAnalysisScope === 'unanalyzed'
+        ? selected
+            .filter(
+              (n) =>
+                n.AiStatus === '待分析' ||
+                n.AiStatus === '分析失败' ||
+                !n.AiSummary ||
+                String(n.AiSummary ?? '').trim() === '',
+            )
+            .map((n) => n.NoteId)
+        : selected.map((n) => n.NoteId);
 
+    if (noteIdsToProcess.length === 0) {
+      message.warning('当前范围内没有可分析的笔记');
+      return;
+    }
+
+    setSmartAnalysisProgress({ total: noteIdsToProcess.length, completed: 0 });
+
+    noteIdsToProcess.forEach((noteId, index) => {
+      setTimeout(() => {
+        fetch(`/api/notes/${noteId}/ai-analysis`, { method: 'POST' })
+          .then((res) => res.json())
+          .then((result) => {
+            if (result.success && result.data) {
+              setNoteList((prev) =>
+                prev.map((note) =>
+                  note.NoteId === noteId
+                    ? {
+                        ...note,
+                        AiContentType: result.data.aiContentType ?? note.AiContentType,
+                        AiRelatedProducts: result.data.aiRelatedProducts ?? note.AiRelatedProducts,
+                        AiSummary: result.data.aiSummary ?? note.AiSummary,
+                        AiStatus: result.data.aiStatus ?? note.AiStatus,
+                        AiErr: result.data.aiErr ?? note.AiErr,
+                      }
+                    : note,
+                ),
+              );
+            }
+          })
+          .catch(() => {})
+          .finally(() => {
+            setSmartAnalysisProgress((prev) =>
+              prev
+                ? { ...prev, completed: Math.min(prev.completed + 1, prev.total) }
+                : null,
+            );
+          });
+      }, index * 1000);
+    });
+  };
+
+  const handleSmartTagStart = () => {
     const tagIdForApi =
       filterTagId && filterTagId !== '__untagged__'
         ? filterTagId
@@ -536,7 +629,7 @@ const NoteTaggingPage: React.FC = () => {
       return;
     }
 
-    message.info(`已提交 ${noteIdsToProcess.length} 条智能打标，将按 1 秒间隔异步执行`);
+    setSmartTagProgress({ total: noteIdsToProcess.length, completed: 0 });
 
     noteIdsToProcess.forEach((noteId, index) => {
       setTimeout(() => {
@@ -557,7 +650,17 @@ const NoteTaggingPage: React.FC = () => {
               );
             }
           })
-          .catch(() => {});
+          .catch(() => {})
+          .finally(() => {
+            setSmartTagProgress((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    completed: Math.min(prev.completed + 1, prev.total),
+                  }
+                : null,
+            );
+          });
       }, index * 1000);
     });
   };
@@ -1193,6 +1296,17 @@ const NoteTaggingPage: React.FC = () => {
           extra={
             <Space>
               <Button
+                disabled={smartAnalysisDisabled}
+                onClick={() => {
+                  setSmartAnalysisScope(
+                    unanalyzedCountForAnalysis > 0 ? 'unanalyzed' : 'all',
+                  );
+                  setSmartAnalysisModalOpen(true);
+                }}
+              >
+                智能分析
+              </Button>
+              <Button
                 disabled={smartTagDisabled}
                 onClick={() => {
                   setSmartTagScope(untaggedCount > 0 ? 'untagged' : 'all');
@@ -1259,32 +1373,146 @@ const NoteTaggingPage: React.FC = () => {
       </Space>
 
       <Modal
-        title="智能打标"
-        open={smartTagModalOpen}
-        onCancel={() => setSmartTagModalOpen(false)}
+        title="智能分析"
+        open={smartAnalysisModalOpen}
+        onCancel={() => {
+          setSmartAnalysisModalOpen(false);
+          setSmartAnalysisProgress(null);
+        }}
         footer={
-          <Button type="primary" onClick={handleSmartTagStart}>
-            开始
-          </Button>
+          smartAnalysisProgress ? (
+            <Button
+              onClick={() => {
+                setSmartAnalysisModalOpen(false);
+                setSmartAnalysisProgress(null);
+              }}
+            >
+              {smartAnalysisProgress.completed >= smartAnalysisProgress.total
+                ? '关闭'
+                : '关闭（后台继续）'}
+            </Button>
+          ) : (
+            <Button type="primary" onClick={handleSmartAnalysisStart}>
+              开始
+            </Button>
+          )
         }
         destroyOnClose
       >
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Text type="secondary">统计范围：当前页已勾选的笔记，且 AiSummary 不为空。</Text>
-          <Radio.Group
-            value={smartTagScope}
-            onChange={(e) => setSmartTagScope(e.target.value)}
-            style={{ width: '100%' }}
-          >
-            <Space direction="vertical">
-              <Radio value="all" disabled={allCount === 0}>
-                所有（{allCount} 篇）
-              </Radio>
-              <Radio value="untagged" disabled={untaggedCount === 0}>
-                未打标（{untaggedCount} 篇）
-              </Radio>
-            </Space>
-          </Radio.Group>
+          {!smartAnalysisProgress ? (
+            <>
+              <Text type="secondary">
+                统计范围：当前页已勾选的笔记，且正文内容不为空。
+              </Text>
+              <Radio.Group
+                value={smartAnalysisScope}
+                onChange={(e) => setSmartAnalysisScope(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical">
+                  <Radio value="all" disabled={canAnalyzeCount === 0}>
+                    所有（{canAnalyzeCount} 篇）
+                  </Radio>
+                  <Radio value="unanalyzed" disabled={unanalyzedCountForAnalysis === 0}>
+                    未分析（{unanalyzedCountForAnalysis} 篇）
+                  </Radio>
+                </Space>
+              </Radio.Group>
+            </>
+          ) : (
+            <>
+              <Text>
+                {smartAnalysisProgress.completed >= smartAnalysisProgress.total
+                  ? '全部完成'
+                  : '智能分析进行中，按 1 秒间隔依次请求…'}
+              </Text>
+              <Progress
+                percent={
+                  smartAnalysisProgress.total > 0
+                    ? Math.round(
+                        (smartAnalysisProgress.completed / smartAnalysisProgress.total) * 100,
+                      )
+                    : 0
+                }
+                status={
+                  smartAnalysisProgress.completed >= smartAnalysisProgress.total
+                    ? 'success'
+                    : 'active'
+                }
+              />
+              <Text type="secondary">
+                已完成 {smartAnalysisProgress.completed} / {smartAnalysisProgress.total} 条
+              </Text>
+            </>
+          )}
+        </Space>
+      </Modal>
+
+      <Modal
+        title="智能打标"
+        open={smartTagModalOpen}
+        onCancel={() => {
+          setSmartTagModalOpen(false);
+          setSmartTagProgress(null);
+        }}
+        footer={
+          smartTagProgress ? (
+            <Button
+              onClick={() => {
+                setSmartTagModalOpen(false);
+                setSmartTagProgress(null);
+              }}
+            >
+              {smartTagProgress.completed >= smartTagProgress.total ? '关闭' : '关闭（后台继续）'}
+            </Button>
+          ) : (
+            <Button type="primary" onClick={handleSmartTagStart}>
+              开始
+            </Button>
+          )
+        }
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          {!smartTagProgress ? (
+            <>
+              <Text type="secondary">统计范围：当前页已勾选的笔记，且 AiSummary 不为空。</Text>
+              <Radio.Group
+                value={smartTagScope}
+                onChange={(e) => setSmartTagScope(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical">
+                  <Radio value="all" disabled={allCount === 0}>
+                    所有（{allCount} 篇）
+                  </Radio>
+                  <Radio value="untagged" disabled={untaggedCount === 0}>
+                    未打标（{untaggedCount} 篇）
+                  </Radio>
+                </Space>
+              </Radio.Group>
+            </>
+          ) : (
+            <>
+              <Text>
+                {smartTagProgress.completed >= smartTagProgress.total
+                  ? '全部完成'
+                  : '智能打标进行中，按 1 秒间隔依次请求…'}
+              </Text>
+              <Progress
+                percent={
+                  smartTagProgress.total > 0
+                    ? Math.round((smartTagProgress.completed / smartTagProgress.total) * 100)
+                    : 0
+                }
+                status={smartTagProgress.completed >= smartTagProgress.total ? 'success' : 'active'}
+              />
+              <Text type="secondary">
+                已完成 {smartTagProgress.completed} / {smartTagProgress.total} 条
+              </Text>
+            </>
+          )}
         </Space>
       </Modal>
 
