@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+
     const result = await processNoteAiTagging(noteId, tagSetId);
 
     if (!result.success) {
