@@ -29,6 +29,18 @@ export async function getTagSetInfoByTagSetId(
     .eq('TagSetId', tagSetId)
     .single();
 
+//增加一个读取所有标签系列信息的功能
+  const { data: tagSets, error: tagSetsError } = await supabase
+    .from('qiangua_tag_set')
+    .select('TagSetId, TagSetName, Description')
+    .order('TagSetName', { ascending: true });
+
+  log.info('getTagSetInfoByTagSetId debug: all tag sets', {
+    requestedTagSetId: tagSetId,
+    error: tagSetsError?.message ?? null,
+    tagSets: tagSets,
+  });
+
   if (setError || !tagSet) {
     log.warning(
       'getTagSetInfoByTagSetId: 标签系列不存在',
