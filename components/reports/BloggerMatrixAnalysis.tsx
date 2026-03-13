@@ -151,6 +151,7 @@ export default function BloggerMatrixAnalysis({
       }
       const rows: LevelStats[] = json.data?.rows || [];
       const details: any[] = json.data?.details || [];
+      const comments: any[] = json.data?.comments || [];
 
       // 汇总 sheet
       // 按页面“列表展示”的字段顺序导出
@@ -287,9 +288,33 @@ export default function BloggerMatrixAnalysis({
       });
       const wsDetails = XLSX.utils.json_to_sheet(detailsData, { header: detailHeader });
 
+      // 评论 sheet
+      const commentHeader = ['笔记链接', '笔记标题', '发布人昵称', 'IP位置', '点赞数', '评论内容', '发布时间'];
+      const formatCommentTime = (ts: number | null): string => {
+        if (!ts) return '';
+        try {
+          const d = new Date(ts * 1000);
+          const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        } catch {
+          return String(ts);
+        }
+      };
+      const commentsData = comments.map((c: any) => ({
+        笔记链接: c.xhsNoteLink || '',
+        笔记标题: c.xhsTitle || '',
+        发布人昵称: c.nickname || '',
+        IP位置: c.ipLocation || '',
+        点赞数: c.likeCount ?? 0,
+        评论内容: c.content || '',
+        发布时间: formatCommentTime(c.commentPostTime),
+      }));
+      const wsComments = XLSX.utils.json_to_sheet(commentsData, { header: commentHeader });
+
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, wsSummary, '汇总');
       XLSX.utils.book_append_sheet(wb, wsDetails, '明细');
+      XLSX.utils.book_append_sheet(wb, wsComments, '评论');
 
       // 文件名：报告名优先，否则使用 reportId；时间戳使用 Asia/Shanghai
       const name = (await getReportName()) || '';

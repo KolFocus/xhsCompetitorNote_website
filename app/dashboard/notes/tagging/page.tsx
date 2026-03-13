@@ -1341,6 +1341,7 @@ const NoteTaggingPage: React.FC = () => {
                 current: page,
                 pageSize,
                 showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100', '300'], 
                 showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
                 onChange: (nextPage, nextSize) => {
                   setPage(nextPage);

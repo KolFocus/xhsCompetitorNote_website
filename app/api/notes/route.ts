@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     const keywordFilters = parseKeywordFiltersFromParams(searchParams);
 
     // 验证分页参数
-    if (page < 1 || pageSize < 1 || pageSize > 100) {
+    if (page < 1 || pageSize < 1 || pageSize > 500) {
       return NextResponse.json(
         {
           success: false,

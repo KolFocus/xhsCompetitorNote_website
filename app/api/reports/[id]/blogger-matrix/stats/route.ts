@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
 import { DEFAULT_BLOGGER_LEVELS_WITH_ID } from '@/lib/constants/bloggerMatrix';
+import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 
 interface NoteInfoRecord {
   BloggerId: string;
@@ -34,6 +35,7 @@ interface NoteInfoRecord {
   BrandName?: string | null;
   VideoDuration?: string | null;
   XhsUserId?: string | null;
+  XhsNoteId?: string | null;
   XhsNoteLink?: string | null;
   XhsTitle?: string | null;
   XhsContent?: string | null;
@@ -167,6 +169,7 @@ export async function GET(
             BrandName,
             VideoDuration,
             XhsUserId,
+            XhsNoteId,
             XhsNoteLink,
             XhsTitle,
             XhsContent,
@@ -517,6 +520,7 @@ export async function GET(
         videoDuration: note.VideoDuration,
         status: rel.Status,
         addedAt: rel.CreatedAt,
+        xhsNoteId: note.XhsNoteId ?? null,
         xhsUserId: note.XhsUserId ?? null,
         xhsNoteLink: note.XhsNoteLink ?? null,
         xhsTitle: note.XhsTitle ?? null,
@@ -527,11 +531,85 @@ export async function GET(
       };
     });
 
+    // 查询评论数据：根据报告内笔记的 XhsNoteId 关联 ext_xhs_comment
+    const xhsNoteIds = filteredNotes
+      .map((rel) => rel.qiangua_note_info!.XhsNoteId)
+      .filter((id): id is string => !!id);
+
+    let comments: Array<{
+      noteId: string;
+      xhsNoteLink: string;
+      xhsTitle: string;
+      nickname: string;
+      ipLocation: string;
+      likeCount: number;
+      content: string;
+      commentPostTime: number | null;
+    }> = [];
+
+    if (xhsNoteIds.length > 0) {
+      try {
+        const serviceClient = getServiceSupabaseClient();
+        const PAGE_SIZE_COMMENTS = 1000;
+        let allComments: any[] = [];
+        let fromC = 0;
+        let hasMoreC = true;
+
+        while (hasMoreC) {
+          const { data: commentRows, error: commentError } = await serviceClient
+            .from('ext_xhs_comment')
+            .select('note_id, nickname, ip_location, like_count, content, comment_post_time')
+            .in('note_id', xhsNoteIds)
+            .range(fromC, fromC + PAGE_SIZE_COMMENTS - 1);
+
+          if (commentError) {
+            console.error('Error fetching comments:', commentError);
+            break;
+          }
+          if (!commentRows || commentRows.length < PAGE_SIZE_COMMENTS) {
+            hasMoreC = false;
+          } else {
+            fromC += PAGE_SIZE_COMMENTS;
+          }
+          allComments = allComments.concat(commentRows || []);
+        }
+
+        // 构建 xhsNoteId -> note detail 映射，用于补充链接和标题
+        const noteDetailMap = new Map<string, { xhsNoteLink: string; xhsTitle: string }>();
+        for (const d of details) {
+          if (d.xhsNoteId) {
+            noteDetailMap.set(d.xhsNoteId, {
+              xhsNoteLink: d.xhsNoteLink || '',
+              xhsTitle: d.xhsTitle || d.title || '',
+            });
+          }
+        }
+
+        comments = allComments.map((c: any) => {
+          const noteDetail = noteDetailMap.get(c.note_id) || { xhsNoteLink: '', xhsTitle: '' };
+          return {
+            noteId: c.note_id,
+            xhsNoteLink: noteDetail.xhsNoteLink,
+            xhsTitle: noteDetail.xhsTitle,
+            nickname: c.nickname || '',
+            ipLocation: c.ip_location || '',
+            likeCount: c.like_count ?? 0,
+            content: c.content || '',
+            commentPostTime: c.comment_post_time ?? null,
+          };
+        });
+      } catch (commentFetchError) {
+        console.error('Error fetching comment data:', commentFetchError);
+        // 评论查询失败不影响主流程，返回空列表
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         rows,
         details,
+        comments,
       },
     });
   } catch (error: any) {
