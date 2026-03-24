@@ -45,8 +45,6 @@ export async function GET(
 
     // 获取查询参数
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const pageSize = parseInt(searchParams.get('pageSize') || '20', 10);
     const status = searchParams.get('status') || 'active';
     const brandKey = searchParams.get('brandKey');
     const bloggerId = searchParams.get('bloggerId');
@@ -60,14 +58,6 @@ export async function GET(
       keywordFilters.optional.length > 0;
     const orderBy = searchParams.get('orderBy') || 'PublishTime';
     const order = searchParams.get('order') || 'desc';
-
-    // 验证分页参数
-    if (page < 1 || pageSize < 1 || pageSize > 100) {
-      return NextResponse.json(
-        { success: false, error: 'Invalid pagination parameters' },
-        { status: 400 }
-      );
-    }
 
     // 构建查询 - 从 qiangua_report_note_rel 开始，关联 qiangua_note_info
     // 注意：先查询所有符合条件的记录，然后在内存中筛选和分页
@@ -289,21 +279,11 @@ export async function GET(
       return order === 'asc' ? aVal - bVal : bVal - aVal;
     });
 
-    // 计算筛选后的总数
-    const totalCount = notes.length;
-
-    // 重新分页（因为筛选在内存中进行）
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize;
-    const paginatedNotes = notes.slice(from, to);
-
     return NextResponse.json({
       success: true,
       data: {
-        list: paginatedNotes,
-        total: totalCount, // 筛选后的总数
-        page,
-        pageSize,
+        list: notes,
+        total: notes.length,
       },
     });
   } catch (error: any) {

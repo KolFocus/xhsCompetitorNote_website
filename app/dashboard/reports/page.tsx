@@ -140,9 +140,6 @@ export default function ReportsPage() {
   const [notesLoading, setNotesLoading] = useState(false); // 笔记列表加载状态
   const [activeTab, setActiveTab] = useState<'active' | 'ignored'>('active');
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
-  const [total, setTotal] = useState(0);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [addNotesModalVisible, setAddNotesModalVisible] = useState(false);
   // 从 localStorage 读取显示AI分析的状态，默认为 false
@@ -246,8 +243,7 @@ export default function ReportsPage() {
   useEffect(() => {
     if (reportId) {
       loadReportDetail(reportId);
-      setPage(1); // 重置到第一页
-      loadNotes(1, pageSize);
+      loadNotes();
     }
   }, [reportId, activeTab, sortField, sortOrder]);
 
@@ -294,16 +290,12 @@ export default function ReportsPage() {
     }
   };
 
-  const loadNotes = async (pageValue = page, pageSizeValue = pageSize) => {
+  const loadNotes = async () => {
     if (!reportId) return;
 
     try {
       setNotesLoading(true);
-      const params = new URLSearchParams({
-        page: String(pageValue),
-        pageSize: String(pageSizeValue),
-        status: activeTab,
-      });
+      const params = new URLSearchParams({ status: activeTab });
       appendKeywordFilters(params);
       if (brandId) params.set('brandKey', brandId);
       if (bloggerId) params.set('bloggerId', bloggerId);
@@ -319,12 +311,7 @@ export default function ReportsPage() {
       const response = await fetch(`/api/reports/${reportId}/notes?${params}`);
       const data = await response.json();
       if (data.success) {
-        const notesList = data.data.list || [];
-        const totalCount = data.data.total ?? notesList.length;
-        setNotes(notesList);
-        setTotal(totalCount);
-        setPage(data.data.page ?? pageValue);
-        setPageSize(data.data.pageSize ?? pageSizeValue);
+        setNotes(data.data.list || []);
       }
     } catch (error) {
       message.error('加载笔记列表失败');
@@ -1323,8 +1310,7 @@ export default function ReportsPage() {
                   value={keyword}
                   onChange={(e) => setKeyword(e.target.value)}
                   onPressEnter={() => {
-                    setPage(1);
-                    loadNotes(1, pageSize);
+                    loadNotes();
                   }}
                   style={{ width: 250 }}
                 />
@@ -1346,8 +1332,7 @@ export default function ReportsPage() {
               </Col>
               <Col>
                 <Button type="primary" onClick={() => {
-                  setPage(1);
-                  loadNotes(1, pageSize);
+                  loadNotes();
                 }}>
                   搜索
                 </Button>
@@ -1359,8 +1344,7 @@ export default function ReportsPage() {
                     setBrandId(null);
                     setBloggerId(null);
                     setDateRange(null);
-                    setPage(1);
-                    loadNotes(1, pageSize);
+                    loadNotes();
                   }}
                 >
                   重置
@@ -1452,25 +1436,7 @@ export default function ReportsPage() {
               selectedRowKeys: selectedNoteIds,
               onChange: (keys) => setSelectedNoteIds(keys as string[]),
             }}
-            pagination={{
-              current: page,
-              total: total,
-              pageSize: pageSize,
-              showSizeChanger: true,
-              showQuickJumper: true,
-              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-              hideOnSinglePage: false,
-              onChange: (newPage, newPageSize) => {
-                if (newPageSize !== pageSize) {
-                  setPageSize(newPageSize);
-                  setPage(1);
-                  loadNotes(1, newPageSize);
-                } else {
-                  setPage(newPage);
-                  loadNotes(newPage, pageSize);
-                }
-              },
-            }}
+            pagination={false}
             scroll={{ x: 'max-content' }}
           />
         </>
