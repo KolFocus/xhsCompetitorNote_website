@@ -110,7 +110,14 @@ export const executeChatAiAnalysis = async (
   // 3. 构建请求 payload
   const payload = buildChatAiRequestPayload(prompt, mediaUrls, model);
 
-  // 4. 调用 ChatAI API
+  console.log('[ViviaI] executeChatAiAnalysis 开始', {
+    noteId: note.note_id,
+    model,
+    mediaUrlCount: mediaUrls.length,
+    apiUrl: AI_API_URL,
+  });
+
+  // 4. 调用 API
   const aiResponse = await fetch(AI_API_URL, {
     method: 'POST',
     headers: {
@@ -120,6 +127,11 @@ export const executeChatAiAnalysis = async (
     body: JSON.stringify(payload),
   });
 
+  console.log('[ViviaI] executeChatAiAnalysis HTTP 响应状态', {
+    status: aiResponse.status,
+    ok: aiResponse.ok,
+  });
+
   if (!aiResponse.ok) {
     let errorText: string | null = null;
     try {
@@ -127,6 +139,7 @@ export const executeChatAiAnalysis = async (
     } catch {
       errorText = aiResponse.statusText;
     }
+    console.error('[ViviaI] executeChatAiAnalysis 接口错误', { status: aiResponse.status, errorText });
     throw new Error(
       `ChatAI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}\nPayload: ${JSON.stringify(payload)}`.trim(),
     );
@@ -144,6 +157,12 @@ export const executeChatAiAnalysis = async (
 
   // 6. 提取消息文本
   const messageText = extractChatAiMessageText(responseBody);
+
+  console.log('[ViviaI] executeChatAiAnalysis 成功', {
+    noteId: note.note_id,
+    responseTextLength: responseText.length,
+    messageTextPreview: messageText.slice(0, 100),
+  });
 
   // 7. 解析 AI 响应内容
   const aiResult = parseAiResponseContent(messageText);
@@ -165,6 +184,13 @@ export const executeChatAiTagAnalysis = async (
   const mediaUrls = collectMediaUrls(note);
   const payload = buildChatAiRequestPayload(prompt, mediaUrls, model);
 
+  console.log('[ViviaI] executeChatAiTagAnalysis 开始', {
+    noteId: note.note_id,
+    model,
+    mediaUrlCount: mediaUrls.length,
+    apiUrl: AI_API_URL,
+  });
+
   const aiResponse = await fetch(AI_API_URL, {
     method: 'POST',
     headers: {
@@ -174,6 +200,11 @@ export const executeChatAiTagAnalysis = async (
     body: JSON.stringify(payload),
   });
 
+  console.log('[ViviaI] executeChatAiTagAnalysis HTTP 响应状态', {
+    status: aiResponse.status,
+    ok: aiResponse.ok,
+  });
+
   if (!aiResponse.ok) {
     let errorText: string | null = null;
     try {
@@ -181,12 +212,20 @@ export const executeChatAiTagAnalysis = async (
     } catch {
       errorText = aiResponse.statusText;
     }
+    console.error('[ViviaI] executeChatAiTagAnalysis 接口错误', { status: aiResponse.status, errorText });
     throw new Error(
       `ChatAI 接口返回错误: ${aiResponse.status} ${errorText ?? ''}`.trim(),
     );
   }
 
   const responseBody = await aiResponse.json().catch(() => ({}));
-  return extractChatAiMessageText(responseBody);
+  const result = extractChatAiMessageText(responseBody);
+
+  console.log('[ViviaI] executeChatAiTagAnalysis 成功', {
+    noteId: note.note_id,
+    resultPreview: result.slice(0, 100),
+  });
+
+  return result;
 };
 

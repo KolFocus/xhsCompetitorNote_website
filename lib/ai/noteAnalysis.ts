@@ -6,8 +6,8 @@ import { getSystemConfig, CONFIG_KEYS } from '@/lib/systemConfig';
 import { fixImageUrl } from '@/lib/utils/dataTransform';
 
 // AI 配置常量
-export const AI_API_URL = 'https://api.chataiapi.com/v1/chat/completions';
-export const AI_API_TOKEN = 'sk-LFrg5PKsdEojeHkjNqtpAe6ehteBHuINJgGRlSIYeG1WObNL';
+export const AI_API_URL = 'https://api.viviai.cc/v1/chat/completions';
+export const AI_API_TOKEN = 'sk-w6ccCFFCrI5kA5UDZjtFlKLLDQPuPebxzymwgdOe1Nqv6BxO';
 export const AI_MODEL_DEFAULT = 'gemini-2.5-flash'; // 默认模型
 
 
