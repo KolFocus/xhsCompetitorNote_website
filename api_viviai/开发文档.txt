@@ -1,0 +1,153 @@
+APi使用指南
+API是调用它人能力的接口！
+- 如果你会编程，拥有API即可以随时随地调用Gemini,GPT,Claude...等“超级大脑”为你创造或处理任务。
+- 如果你不会编程，市面上有非常多优秀的调用API来处理任务的软件，在他们的软件里均可配置API。
+
+一、API使用
+- API地址：https://api.viviai.cc
+- 令牌Key：创建的令牌sk开头的key
+
+拥有这两个配置就可在任何地方调用API。（在软件中基本都有这两项配置,如没有则软件可能不支持调用外部api）
+
+
+---
+
+二、注册/创建Key
+1.API注册
+- 注册地址：https://api.viviai.cc
+- 备用地址：https://api.viviai.top
+
+2.兑换余额
+进入控制台>钱包管理>输入兑换码兑换
+注:【付了多少兑换的余额就是多少】，模型价格可查看分组价格说明
+
+3.创建key (key是调用APi的“钥匙”)
+进入令牌管理>创建令牌
+- 填写令牌名称（随便取一个，方便区分模型和用途）
+- 选择分组（必须选对应模型分组，根据分组说明选择自己需要的分组）
+- 其他选项无特殊需求可保持默认。
+
+4.分组价格说明
+- 不同的模型通过分组区分价格。
+    例1：gemini特价组=0.8倍率，价格为0.8元/刀。
+    例2：claude特价组=1.5倍率，价格为1.5元/刀。
+分组
+支持模型
+倍率
+价格
+说明
+default默认
+openai模型/gemini模型
+官方费率*1
+1元/刀
+默认分组，如需同key使用多家模型才选此分组
+gemini特价
+gemini文字模型
+官方费率*0.8
+0.8元/刀
+gemini特价渠道，价格优惠，推荐
+gemini
+gemini全模型
+官方费率*2
+2元/刀
+gemini官方大额账号，并发高
+claude特价
+claude模型
+官方费率*1.5
+1.5元/刀
+claude特价渠道，价格优惠，推荐
+claude
+claude模型
+官方费率*2.5
+2.5元/刀
+claude官方大额账号，并发高
+grok分组
+grok模型
+官方费率*1
+1元/刀
+grok模型分组
+nanobanana
+nanobanana模型
+官方费率*1
+按次计费
+nanobanana生图分组，稳定并发高，推荐
+根据市场价格波动，倍率会有调整。
+
+
+---
+
+三、软件推荐
+仅列出一些常用优秀软件,支持api的软件还有很多请自行探索！
+
+对话类应用
+- CherryStudio软件   点击下载    >配置教程
+- Chatbox                在线网页   >配置教程
+
+生图类
+- Nanobanana在线生图（右上角填入key） https://nano.viviai.cc/
+- Nano在线生图(右上角配置API)  https://tansuo2021.github.io/gemini-3-pro-image-preview/
+（因图片较大,有魔法最好打开，否则可能传输失败）
+
+Openclaw
+- Openclaw  >配置教程
+
+编程类
+- Gemini cli  >配置教程
+- Claude Code   >配置教程
+- Claude Code for vscode   >配置教程
+- opencode  >配置教程
+
+工作流
+- Comfyui  >配置教程
+
+酒馆
+- Silly Tarve  >配置教程
+
+其他类型
+- 沉浸式翻译   >配置教程
+
+
+---
+
+四、模型列表和区别
+进入模型广场，可查看所有支持的模型和价格
+
+- Gemini模型- 适合数据分析，长视频与音频理解，前端代码编写。价格便宜-性价比最高
+- Claude模型- 适合写作写文案，逻辑处理，后端代码编写。
+- GPT模型- 有最成熟的生态，最适合处理解决各类通用问题。
+- Nanobanana生图模型- 目前最强图片生成模型，可控性极高。绘图强烈推荐
+
+Gemini模型
+- gemini-2.5-flash
+- gemini-2.5-pro
+- gemini-3-flash-preview
+- gemini-3-pro-preview
+- gemini-3.1-pro-preview
+- 注：后缀带-thinking，即为带思考
+
+Nanobanana模型
+- gemini-2.5-flash-image-preview      nanobanana1
+- gemini-3-pro-image-preview             nanobanana pro 支持2K 4K
+- gemini-3.1-flash-image-preview      最新 nanobanana 2   支持2K 4K
+
+Claude模型
+- claude-haiku-4-5-20251001
+- claude-sonnet-4-5-20250929
+- claude-opus-4-5-20251101
+- claude-sonnet-4-6
+- claude-opus-4-6
+注：后缀带-thinking，即为带思考。
+
+
+---
+
+常见问题
+1.接口格式
+- Gemini接口格式
+  原请求地址 https://generativelanguage.googleapis.com/v1beta 替换为https://api.viviai.cc/v1beta 
+- Openai接口格式
+  原请求地址 https://api.openai.com/v1 替换为 https://api.viviai.cc/v1
+- Claude接口格式
+  原请求地址https://api.anthropic.com/v1/messages替换为 https://api.viviai.cc/v1/messages
+
+/斜杠后面的格式根据不同软件有所不同，一般不需要填写，如果调用出错，则尝试填写/斜杠后面内容
