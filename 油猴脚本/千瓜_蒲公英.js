@@ -2665,13 +2665,30 @@
         return trimmed === '' ? null : trimmed;
     }
 
+    function removeNullBytes(value) {
+        if (typeof value === 'string') {
+            return value.replace(/\u0000/g, '');
+        }
+        if (Array.isArray(value)) {
+            return value.map(removeNullBytes);
+        }
+        if (value !== null && typeof value === 'object') {
+            const cleaned = {};
+            Object.keys(value).forEach(function(k) {
+                cleaned[k] = removeNullBytes(value[k]);
+            });
+            return cleaned;
+        }
+        return value;
+    }
+
     function cleanupPayload(payload) {
         const result = {};
         if (!payload || typeof payload !== 'object') return result;
         Object.keys(payload).forEach(function(key) {
             const value = payload[key];
             if (value !== undefined) {
-                result[key] = value;
+                result[key] = removeNullBytes(value);
             }
         });
         return result;

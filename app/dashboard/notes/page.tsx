@@ -47,38 +47,13 @@ import type { ColumnsType, TableProps } from 'antd/es/table';
 import 'dayjs/locale/zh-cn';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
+import { getProxiedImageUrl } from '@/lib/utils/imageUrl';
 
 dayjs.locale('zh-cn');
 
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Text } = Typography;
-
-// 图片代理服务
-const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
-
-/**
- * 获取代理后的图片 URL
- * @param url 原始图片 URL
- * @returns 代理后的 URL 或 undefined
- */
-const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
-  if (!url) return undefined;
-  
-  // 如果已经是代理 URL，直接返回
-  if (url.includes('xhstool.cc/api/proxy')) {
-    return url;
-  }
-  
-  // 如果是相对路径，直接返回（不需要代理）
-  if (url.startsWith('/')) {
-    url = 'https:'+url
-    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
-  }
-  
-  // 外部 URL 通过代理访问
-  return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
-};
 
 interface Note {
   NoteId: string;

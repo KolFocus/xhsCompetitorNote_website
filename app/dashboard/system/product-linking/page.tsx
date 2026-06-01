@@ -28,21 +28,10 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
+import { getProxiedImageUrl } from '@/lib/utils/imageUrl';
 import { PRODUCT_LINKING_IGNORE_UUID, PRODUCT_LINKING_DEFAULT_PAGE_SIZE } from '@/lib/constants/productLinking';
 
 const { Text } = Typography;
-
-// 图片代理服务（与笔记列表/标签页保持一致）
-const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
-const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
-  if (!url) return undefined;
-  if (url.includes('xhstool.cc/api/proxy')) return url;
-  if (url.startsWith('/')) {
-    const normalized = `https:${url}`;
-    return `${PROXY_BASE_URL}?url=${encodeURIComponent(normalized)}`;
-  }
-  return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
-};
 
 type StatusType = 'pending' | 'linked' | 'ignored';
 

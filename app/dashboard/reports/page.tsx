@@ -55,6 +55,7 @@ import AddNotesModal from '@/components/reports/AddNotesModal';
 import BloggerMatrixAnalysis from '@/components/reports/BloggerMatrixAnalysis';
 import TagAnalysis from '@/components/reports/TagAnalysis';
 import { parseKeywordExpression } from '@/lib/utils/keywordSearch';
+import { getProxiedImageUrl } from '@/lib/utils/imageUrl';
 import { useRouter } from 'next/navigation';
 
 dayjs.locale('zh-cn');
@@ -62,20 +63,6 @@ dayjs.locale('zh-cn');
 const { RangePicker } = DatePicker;
 const { Option } = Select;
 const { Text } = Typography;
-
-// 图片代理服务
-const PROXY_BASE_URL = 'https://www.xhstool.cc/api/proxy';
-
-const getProxiedImageUrl = (url: string | null | undefined): string | undefined => {
-  if (!url) return undefined;
-  if (url.includes('xhstool.cc/api/proxy')) return url;
-  if (url.startsWith('/')) {
-    url = 'https:'+url
-    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
-  }
-  else
-    return `${PROXY_BASE_URL}?url=${encodeURIComponent(url)}`;
-};
 
 interface Report {
   reportId: string;
