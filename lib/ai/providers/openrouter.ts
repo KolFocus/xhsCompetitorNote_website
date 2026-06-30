@@ -12,6 +12,7 @@ import {
 import { OpenRouter } from '@openrouter/sdk';
 import { getSystemConfig, CONFIG_KEYS } from '@/lib/systemConfig';
 import { log } from '@/lib/logger';
+import { getAiMediaUrl } from '@/lib/utils/imageUrl';
 
 /**
  * 执行 OpenRouter 分析
@@ -80,7 +81,7 @@ export const executeOpenRouterAnalysis = async (
   imageUrls.forEach((url) => {
     messageContent.push({
       type: 'image_url',
-      imageUrl: { url },  // 使用 imageUrl 而不是 image_url
+      imageUrl: { url: getAiMediaUrl(url) },
     });
   });
 
@@ -166,7 +167,7 @@ export const executeOpenRouterAiTagAnalysis = async (
   const openRouterModel = convertToOpenRouterModel(model);
   const messageContent: any[] = [{ type: 'text', text: prompt }];
   imageUrls.forEach((url) => {
-    messageContent.push({ type: 'image_url', imageUrl: { url } });
+    messageContent.push({ type: 'image_url', imageUrl: { url: getAiMediaUrl(url) } });
   });
 
   const completion = await client.chat.send(

@@ -10,6 +10,8 @@
     "lint": "next lint",
     "test:reports": "node scripts/test-reports-api.js",
     "test:tagging": "node scripts/test-note-tagging-api.js",
+    "huitun:staging": "node scripts/huitun-build-staging.js",
+    "huitun:import": "node scripts/huitun-import.js",
     "test:openrouter": "node scripts/test-openrouter-client.js"
   },
   "dependencies": {

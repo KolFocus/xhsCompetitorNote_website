@@ -86,3 +86,28 @@ export function getProxiedImageUrl(
   const normalized = normalizeImageUrl(url);
   return `${PROXY_BASE_URL}?url=${encodeURIComponent(normalized)}`;
 }
+
+/** 灰豚等离线下载常见的阿里云 OSS 域名 */
+export function isAliyunOssUrl(url: string): boolean {
+  try {
+    const withProtocol = url.trim().startsWith('//') ? `https:${url.trim()}` : url.trim();
+    const { hostname } = new URL(withProtocol);
+    return hostname.endsWith('.aliyuncs.com');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * AI 多模态请求用：阿里云 OSS 直链经 xhstool 中转（模型侧往往拉不到 OSS），其余 URL 原样返回
+ * 例：https://www.xhstool.cc/api/proxy?url=https%3A%2F%2Fcod-resource.oss-cn-shanghai.aliyuncs.com%2F...
+ */
+export function getAiMediaUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.includes('xhstool.cc/api/proxy')) return trimmed;
+
+  const withProtocol = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed;
+  if (!isAliyunOssUrl(withProtocol)) return withProtocol;
+
+  return `${PROXY_BASE_URL}?url=${encodeURIComponent(withProtocol)}`;
+}
