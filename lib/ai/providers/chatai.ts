@@ -11,7 +11,6 @@ import {
   AI_API_URL,
   AI_API_TOKEN,
 } from '../noteAnalysis';
-import { getAiMediaUrl } from '@/lib/utils/imageUrl';
 
 /**
  * 构建 ChatAI 请求的 payload
@@ -28,7 +27,7 @@ const buildChatAiRequestPayload = (prompt: string, mediaUrls: string[], model: s
     content.push({
       type: 'image_url',
       image_url: {
-        url: getAiMediaUrl(url),
+        url,
       },
     });
   }
