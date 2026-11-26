@@ -8,7 +8,7 @@ import { fixImageUrl } from '@/lib/utils/dataTransform';
 // AI 配置常量
 export const AI_API_URL = 'https://api.viviai.cc/v1/chat/completions';
 export const AI_API_TOKEN = 'sk-ujhc2cmJnoWay1tuRAZrigFm5LTpiRJCMcDP9P9n3I8fWM9M';
-export const AI_MODEL_DEFAULT = 'gemini-2.5-flash'; // 默认模型
+export const AI_MODEL_DEFAULT = 'gemini-3.5-flash'; // 默认模型
 
 
 /**
@@ -251,6 +251,11 @@ export const buildNoteAnalysisPrompt = (
     '请严格遵循以下输出格式和字段不要添加任何其他字段，但要保证同时出现 summary、contentType、relatedProducts这三个字段。',
     '你**只**输出给我下面格式的数据。所有输出内容必须是一个**合法**的JSON对象，并使用 `^DT^` 进行包裹，方便后续进行程序化解析。',
     '',
+    '**格式硬性要求（必须遵守）：**',
+    '1. 包裹标记必须是连续的四个字符 `^DT^`，中间**禁止**空格或换行（错误示例：`^DT ^`、`^DT\\n^`）。',
+    '2. JSON 的 **字符串值内部禁止换行**；`summary` / `contentType` / `relatedProducts` 都必须写在同一行内，不要在引号内断行。',
+    '3. 输出必须是可被标准 JSON.parse 解析的合法 JSON。',
+    '',
     '**输出格式如下：**',
     '^DT^',
     '  {',
@@ -261,6 +266,49 @@ export const buildNoteAnalysisPrompt = (
     '^DT^',
   ].join('\n');
 };
+
+/**
+ * 修复模型偶发写入 JSON 字符串字面量内的裸换行 / 控制字符。
+ * 仅处理引号内内容，结构空白（字段间缩进换行）保留。
+ */
+export function sanitizeJsonStringLiterals(json: string): string {
+  let out = '';
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (inString) {
+      if (escaped) {
+        out += ch;
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        out += ch;
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        out += ch;
+        inString = false;
+        continue;
+      }
+      // 裸换行/制表符/其它控制字符 → 空格（避免 Bad control character）
+      const code = ch.charCodeAt(0);
+      if (code < 0x20) {
+        out += ' ';
+        continue;
+      }
+      out += ch;
+    } else {
+      if (ch === '"') inString = true;
+      out += ch;
+    }
+  }
+
+  return out;
+}
 
 export const parseAiResponseContent = (content: string): AiAnalysisResult => {
   const trimmed = typeof content === 'string' ? content.trim() : '';
@@ -275,23 +323,31 @@ export const parseAiResponseContent = (content: string): AiAnalysisResult => {
     throw new Error('敏感内容');
   }
 
-  const match = content.match(/\^DT\^[\s\S]*?\^DT\^/);
+  // 允许 ^DT^ / ^DT ^ 等标记内空格（模型偶发插入）
+  const match = content.match(/\^DT\s*\^([\s\S]*?)\^DT\s*\^/);
   if (!match) {
     throw new Error('AI 响应未包含 ^DT^ 包裹的 JSON 数据：' + trimmed);
   }
 
   const rawJsonBlock = match[0];
-  // 去除 ^DT^ 标记
-  let jsonPayload = rawJsonBlock.replace(/\^DT\^/g, '').trim();
+  // 去除 ^DT^ 标记（含标记内空格）
+  let jsonPayload = rawJsonBlock.replace(/\^DT\s*\^/g, '').trim();
 
   // 去除可能的代码块标记（```json 和 ```）
   jsonPayload = jsonPayload.replace(/^```json\s*/i, '').replace(/\s*```$/g, '').trim();
+  // 字符串字面量内裸换行等控制字符 → 空格
+  jsonPayload = sanitizeJsonStringLiterals(jsonPayload);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonPayload);
   } catch (error) {
-    throw new Error(`AI 响应 JSON 解析失败: ${(error as Error).message}`);
+    // 附带完整原文，便于排查控制字符 / 截断等问题（JSON.stringify 会转义不可见字符）
+    throw new Error(
+      `AI 响应 JSON 解析失败: ${(error as Error).message}\n` +
+        `原始响应: ${JSON.stringify(trimmed)}\n` +
+        `提取的JSON: ${JSON.stringify(jsonPayload)}`,
+    );
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
