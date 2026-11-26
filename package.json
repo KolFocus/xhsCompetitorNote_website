@@ -10,8 +10,12 @@
     "lint": "next lint",
     "test:reports": "node scripts/test-reports-api.js",
     "test:tagging": "node scripts/test-note-tagging-api.js",
+    "huitun:dedup-csv": "node scripts/huitun-dedup-csv.js",
     "huitun:staging": "node scripts/huitun-build-staging.js",
     "huitun:import": "node scripts/huitun-import.js",
+    "huitun:backfill-link": "node scripts/huitun-backfill-xhs-note-link.js",
+    "huitun:backfill-images": "node scripts/huitun-backfill-xhs-images.js",
+    "huitun:backfill-brand-name": "node scripts/huitun-backfill-brand-name.js",
     "test:openrouter": "node scripts/test-openrouter-client.js"
   },
   "dependencies": {

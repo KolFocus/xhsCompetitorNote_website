@@ -36,6 +36,8 @@ function loadEnvLocal() {
 }
 
 function parseCsv(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+
   const rows = [];
   let i = 0;
   const len = text.length;
@@ -102,16 +104,72 @@ function extractNoteIdFromUrl(url) {
   return m ? m[1].toLowerCase() : '';
 }
 
+function extractUserIdFromUrl(url) {
+  if (!url) return '';
+  const m = url.match(/\/user\/profile\/([a-f0-9]{24})/i);
+  return m ? m[1].toLowerCase() : '';
+}
+
+function excelSerialToIso(serial) {
+  const n = typeof serial === 'number' ? serial : parseFloat(String(serial).trim());
+  if (!Number.isFinite(n) || n < 30000) return '';
+  const utcMs = (n - 25569) * 86400000;
+  const d = new Date(utcMs);
+  const pad = (x) => String(x).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}+08:00`;
+}
+
 function parsePublishTime(csvTime, xlsTime) {
   const raw = csvTime || xlsTime || '';
   if (!raw) return '';
-  const cn = raw.match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{2}):(\d{2}):(\d{2})/);
+  // 毫秒时间戳（灰豚「小红书博文」英文导出）
+  const ms =
+    typeof raw === 'number' && raw > 1e12
+      ? raw
+      : /^\d{13}$/.test(String(raw).trim())
+        ? Number(String(raw).trim())
+        : NaN;
+  if (Number.isFinite(ms)) {
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      const pad = (n) => String(n).padStart(2, '0');
+      // 按东八区展示
+      const utc = d.getTime() + 8 * 3600 * 1000;
+      const e = new Date(utc);
+      return `${e.getUTCFullYear()}-${pad(e.getUTCMonth() + 1)}-${pad(e.getUTCDate())}T${pad(e.getUTCHours())}:${pad(e.getUTCMinutes())}:${pad(e.getUTCSeconds())}+08:00`;
+    }
+  }
+  const serial =
+    typeof raw === 'number'
+      ? raw
+      : /^\d{5}(\.\d+)?$/.test(String(raw).trim())
+        ? parseFloat(String(raw).trim())
+        : NaN;
+  if (Number.isFinite(serial)) {
+    const iso = excelSerialToIso(serial);
+    if (iso) return iso;
+  }
+  const cn = String(raw).match(/(\d{4})年(\d{2})月(\d{2})日\s*(\d{2}):(\d{2}):(\d{2})/);
   if (cn) {
     return `${cn[1]}-${cn[2]}-${cn[3]}T${cn[4]}:${cn[5]}:${cn[6]}+08:00`;
   }
-  const std = raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+  const std = String(raw).match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
   if (std) return `${std[1]}T${std[2]}+08:00`;
-  return raw;
+  // 美式日期：M/D/YYYY H:mm 或 M/D/YYYY H:mm:ss（Excel/CSV 常见）
+  const us = String(raw).match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+  );
+  if (us) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const y = us[3];
+    const mo = pad(us[1]);
+    const d = pad(us[2]);
+    const hh = pad(us[4] || '0');
+    const mm = pad(us[5] || '0');
+    const ss = pad(us[6] || '0');
+    return `${y}-${mo}-${d}T${hh}:${mm}:${ss}+08:00`;
+  }
+  return String(raw);
 }
 
 function toDateCode(iso) {
@@ -153,41 +211,170 @@ function idKey(hex) {
   return hex.slice(0, 6);
 }
 
-/** 剔除美妆/香氛子线（不入库） */
-function isExcludedSubBrand(cooperateBrandName) {
-  const n = String(cooperateBrandName || '').trim();
+/**
+ * 品牌名称 alias：灰豚 CSV 名 → DB BrandName（仅用于查 BrandId/Key）
+ * 笔记入库时 BrandName / CooperateBindsName 仍用灰豚原始名 huitun_brand_name
+ */
+const BRAND_ALIAS = {
+  'Jimmy Choo': 'JimmyChoo',
+  '华伦天奴': 'VALENTINO华伦天奴',
+  'Maison Margiela 梅森马吉拉': 'Maison Margiela 马吉拉',
+  'McQueen': 'Alexander McQueen',
+  'SAINTLAURENT圣罗兰': 'YSL圣罗兰美妆',
+  '香奈儿CHANEL': '香奈儿美妆',
+};
+
+/**
+ * 本批新建品牌（DB 中尚不存在，阶段 B 第 1 步创建）
+ * 使用 alias 映射后的规范名称
+ */
+const NEW_BRAND_NAMES = new Set(['ERDOS鄂尔多斯', 'Songmont山下有松']);
+
+/** 非品牌平台，直接剔除 */
+const EXCLUDED_PLATFORMS = new Set(['珍品网']);
+
+/**
+ * 判断是否需要剔除（子线 / 非品牌平台）
+ * 子线关键词：美妆、香氛、香水美妆、腕表、儿童服饰
+ */
+function isExcludedBrand(name) {
+  const n = String(name || '').trim();
   if (!n) return false;
-  return n.includes('美妆') || n.includes('香氛') || n.includes('香水美妆');
+  if (EXCLUDED_PLATFORMS.has(n)) return true;
+  return (
+    n.includes('美妆') ||
+    n.includes('香氛') ||
+    n.includes('香水美妆') ||
+    n.includes('腕表') ||
+    n.includes('儿童服饰')
+  );
 }
 
+/** 只读取本批已合并去重的单一 CSV */
 function loadCsvRows() {
-  const files = fs.readdirSync(DATA_DIR).filter((f) => f.endsWith('.csv'));
-  const all = [];
-  for (const file of files.sort()) {
-    const text = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
-    const rows = parseCsv(text);
-    for (const row of rows) {
-      all.push({ ...row, _sourceCsv: file });
+  const file = '灰豚汇总_去重后.csv';
+  const text = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
+  return parseCsv(text);
+}
+
+/**
+ * 将「小红书博文」英文表头行规范为旧版「笔记」Sheet 中文列名，供下游统一读取。
+ * 图片只取 raw_image_list → rawImageList，不用 image_list 回退。
+ */
+function normalizeBowenRow(row) {
+  return {
+    笔记ID: row.note_id || row['笔记ID'] || '',
+    博主ID: row.user_id || row['博主ID'] || '',
+    标题: row.title || row['标题'] || '',
+    内容: row.content || row['内容'] || '',
+    笔记链接: row.note_url || row['笔记链接'] || '',
+    视频链接: row.video_url || row['视频链接'] || '',
+    封面图: row.cover_image || row['封面图'] || '',
+    rawImageList: row.raw_image_list || row.rawImageList || '',
+    博主昵称: row.nickname || row['博主昵称'] || '',
+    博主头像: row.avatar || row['博主头像'] || '',
+    类型: row.type || row['类型'] || '',
+    笔记发布: row.note_post_time || row['笔记发布'] || '',
+  };
+}
+
+function isBowenSheet(sheetName, sampleRow) {
+  if (sheetName === '小红书博文') return true;
+  if (!sampleRow || typeof sampleRow !== 'object') return false;
+  return (
+    Object.prototype.hasOwnProperty.call(sampleRow, 'note_id') ||
+    Object.prototype.hasOwnProperty.call(sampleRow, 'raw_image_list')
+  );
+}
+
+/** 自动发现目录内笔记详情文件（按文件名排序，先出现的笔记/博主优先） */
+function discoverDetailFiles() {
+  return fs
+    .readdirSync(DATA_DIR)
+    .filter((name) => {
+      if (name.startsWith('staging_') || name.startsWith('import_') || name.startsWith('backfill_')) {
+        return false;
+      }
+      if (name.includes('商业合作笔记') || name.includes('商业笔记')) {
+        // 列表导出，不是详情
+        if (!name.startsWith('小红书笔记数据') && !name.startsWith('小红书博文') && name !== '小红书笔记详情.xls') {
+          return false;
+        }
+      }
+      const lower = name.toLowerCase();
+      if (!lower.endsWith('.xls') && !lower.endsWith('.xlsx')) return false;
+      return (
+        name.startsWith('小红书笔记数据') ||
+        name.startsWith('小红书博文') ||
+        name === '小红书笔记详情.xls'
+      );
+    })
+    .sort();
+}
+
+/**
+ * 加载 XLS 详情（先后加载，笔记/博主均以第一次出现为准）
+ * 兼容：
+ *   1) 旧版 Sheet「笔记」+「博主」（中文列名）
+ *   2) 新版 Sheet「小红书博文」（英文列名，无独立博主 Sheet）
+ */
+function loadXlsMaps() {
+  const XLS_FILES = discoverDetailFiles();
+
+  if (!XLS_FILES.length) {
+    throw new Error(
+      `未在 ${DATA_DIR} 找到可用的笔记详情（小红书笔记数据_*.xlsx / 小红书博文_*.xls）`
+    );
+  }
+
+  const noteMap = new Map();
+  const bloggerMap = new Map();
+  let noteCount = 0;
+  let bloggerCount = 0;
+
+  for (const file of XLS_FILES) {
+    const wb = XLSX.readFile(path.join(DATA_DIR, file));
+    console.log(`  读取详情: ${file}（Sheets: ${wb.SheetNames.join(', ')}）`);
+
+    if (wb.Sheets['笔记']) {
+      const notes = XLSX.utils.sheet_to_json(wb.Sheets['笔记'], { defval: '' });
+      for (const n of notes) {
+        const id = String(n['笔记ID'] || '').toLowerCase();
+        if (id && !noteMap.has(id)) {
+          noteMap.set(id, n);
+          noteCount++;
+        }
+      }
+    }
+
+    if (wb.Sheets['博主']) {
+      const bloggers = XLSX.utils.sheet_to_json(wb.Sheets['博主'], { defval: '' });
+      for (const b of bloggers) {
+        const id = String(b['用户ID'] || '').toLowerCase();
+        if (id && !bloggerMap.has(id)) {
+          bloggerMap.set(id, b);
+          bloggerCount++;
+        }
+      }
+    }
+
+    // 英文「小红书博文」或同结构 Sheet
+    for (const sheetName of wb.SheetNames) {
+      if (sheetName === '笔记' || sheetName === '博主') continue;
+      const rawRows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: '' });
+      if (!rawRows.length || !isBowenSheet(sheetName, rawRows[0])) continue;
+      for (const raw of rawRows) {
+        const n = normalizeBowenRow(raw);
+        const id = String(n['笔记ID'] || '').toLowerCase();
+        if (id && !noteMap.has(id)) {
+          noteMap.set(id, n);
+          noteCount++;
+        }
+      }
     }
   }
-  return all;
-}
 
-function loadXlsMaps() {
-  const wb = XLSX.readFile(path.join(DATA_DIR, '小红书笔记详情.xls'));
-  const notes = XLSX.utils.sheet_to_json(wb.Sheets['笔记'], { defval: '' });
-  const bloggers = XLSX.utils.sheet_to_json(wb.Sheets['博主'], { defval: '' });
-  const noteMap = new Map();
-  for (const n of notes) {
-    const id = String(n['笔记ID'] || '').toLowerCase();
-    if (id) noteMap.set(id, n);
-  }
-  const bloggerMap = new Map();
-  for (const b of bloggers) {
-    const id = String(b['用户ID'] || '').toLowerCase();
-    if (id) bloggerMap.set(id, b);
-  }
-  return { noteMap, bloggerMap, noteCount: notes.length, bloggerCount: bloggers.length };
+  return { noteMap, bloggerMap, noteCount, bloggerCount };
 }
 
 async function fetchAllRest(baseUrl, key, table, select, pageSize = 1000) {
@@ -315,13 +502,13 @@ async function fetchDbContextPg(pool) {
   };
 }
 
-function buildCooperateBindList(brand) {
+function buildCooperateBindList(brand, displayBrandName) {
   if (!brand) return '';
   return JSON.stringify([
     {
       BrandId: Number.isFinite(Number(brand.BrandId)) ? Number(brand.BrandId) : brand.BrandId,
       BrandIdKey: brand.BrandIdKey,
-      BrandName: brand.BrandName,
+      BrandName: displayBrandName || brand.BrandName,
     },
   ]);
 }
@@ -353,14 +540,15 @@ async function main() {
   const csvRows = loadCsvRows();
   const { noteMap, bloggerMap, noteCount, bloggerCount } = loadXlsMaps();
   console.log(`灰豚 CSV ${csvRows.length} 条，XLS 笔记 ${noteCount}，XLS 博主 ${bloggerCount}`);
-  console.log('  品牌匹配：CSV「商业合作品牌」→ DB BrandName；剔除含美妆/香氛子线');
+  console.log('  品牌匹配：alias → DB BrandName；剔除子线/非品牌；新品牌标记待创建');
 
   const staging = [];
   const stats = {
     total: 0,
     skip: 0,
     insert: 0,
-    excludedSubBrand: 0,
+    insertNewBrand: 0,
+    excludedBrand: 0,
     brandUnmapped: 0,
     missingXlsNote: 0,
     missingXhsUserId: 0,
@@ -371,48 +559,77 @@ async function main() {
 
   for (const csv of csvRows) {
     stats.total++;
-    const xhsNoteId = extractNoteIdFromUrl(csv['链接地址']) || '';
+
+    // 笔记 ID：优先用 CSV 直接字段，退路从 URL 解析
+    const xhsNoteId = (
+      String(csv['笔记id'] || '').toLowerCase() ||
+      extractNoteIdFromUrl(csv['链接地址'])
+    );
+
     const xlsNote = noteMap.get(xhsNoteId) || null;
     if (!xlsNote) stats.missingXlsNote++;
 
-    const xhsUserId = String(xlsNote?.['博主ID'] || '').toLowerCase();
+    // 博主 ID：优先 CSV 直接字段 → 主页链接 → XLS
+    const xhsUserId = (
+      String(csv['博主id'] || '').toLowerCase() ||
+      extractUserIdFromUrl(csv['达人主页链接']) ||
+      String(xlsNote?.['博主ID'] || '').toLowerCase()
+    );
     if (!xhsUserId) stats.missingXhsUserId++;
 
+    // 品牌名：先 alias 映射，再查 DB
     const brandNameRaw = (csv['商业合作品牌'] || '').trim();
-    const excludedSubBrand = isExcludedSubBrand(brandNameRaw);
-    const brand = excludedSubBrand ? null : db.brandByName.get(brandNameRaw) || null;
-    const brandMapped = !!brand;
-    if (excludedSubBrand) {
-      stats.excludedSubBrand++;
-    } else if (!brandMapped && brandNameRaw) {
+    const brandNameMapped = BRAND_ALIAS[brandNameRaw] || brandNameRaw;
+    const excluded = isExcludedBrand(brandNameRaw);
+    const isNewBrand = !excluded && NEW_BRAND_NAMES.has(brandNameMapped);
+    const brand = excluded || isNewBrand ? null : db.brandByName.get(brandNameMapped) || null;
+    const brandResolved = !!brand || isNewBrand;
+
+    if (excluded) {
+      stats.excludedBrand++;
+    } else if (!brandResolved && brandNameMapped) {
       stats.brandUnmapped++;
       brandUnmappedNames.add(brandNameRaw);
     }
 
-    const filePrefixMatch = String(csv._sourceCsv || '').match(/^(.+?)_商业笔记_/);
-    const filePrefix = filePrefixMatch ? filePrefixMatch[1].trim() : '';
+    // brand_action 标记
+    let brandAction = 'existing';
+    if (excluded) brandAction = 'excluded';
+    else if (isNewBrand) brandAction = 'new';
+    else if (!brand) brandAction = 'unmapped';
 
+    // 决策 import_action（顺序有意义，不要调换）
     let importAction = 'insert';
     let skipReason = '';
-    if (excludedSubBrand) {
+    if (excluded) {
       importAction = 'skip';
-      skipReason = '剔除子线（美妆/香氛）';
-    } else if (xhsNoteId && db.existingXhsNoteIds.has(xhsNoteId)) {
-      importAction = 'skip';
-      skipReason = 'XhsNoteId 已存在于库';
-    } else if (xhsNoteId && db.existingNoteIds.has(xhsNoteId)) {
-      importAction = 'skip';
-      skipReason = 'NoteId 已存在于库';
-    } else if (!brandMapped) {
-      importAction = 'skip';
-      skipReason = '品牌未映射';
+      skipReason = '剔除子线/非品牌';
     } else if (!xhsNoteId) {
       importAction = 'skip';
       skipReason = '无法解析笔记ID';
+    } else if (!xlsNote) {
+      importAction = 'skip';
+      skipReason = '缺XLS详情';
+    } else if (!xhsUserId) {
+      importAction = 'skip';
+      skipReason = '无法解析博主ID';
+    } else if (db.existingXhsNoteIds.has(xhsNoteId)) {
+      importAction = 'skip';
+      skipReason = 'XhsNoteId 已存在于库';
+    } else if (db.existingNoteIds.has(xhsNoteId)) {
+      importAction = 'skip';
+      skipReason = 'NoteId 已存在于库';
+    } else if (!brandResolved) {
+      importAction = 'skip';
+      skipReason = '品牌未映射';
     }
 
-    if (importAction === 'skip') stats.skip++;
-    else stats.insert++;
+    if (importAction === 'skip') {
+      stats.skip++;
+    } else {
+      stats.insert++;
+      if (isNewBrand) stats.insertNewBrand++;
+    }
 
     let matchBlogger = 'new';
     let bloggerId = xhsUserId;
@@ -431,30 +648,28 @@ async function main() {
     const row = {
       import_action: importAction,
       skip_reason: skipReason,
+      brand_action: brandAction,
       match_blogger: matchBlogger,
-      brand_mapped: brandMapped ? 'yes' : 'no',
-      brand_match_via: excludedSubBrand ? 'excluded' : 'csv_cooperate_brand',
-      excluded_sub_brand: excludedSubBrand ? 'yes' : 'no',
-      source_file_prefix: filePrefix,
       XhsNoteId: xhsNoteId,
       NoteId: importAction === 'insert' ? xhsNoteId : '',
       NoteIdKey: importAction === 'insert' ? idKey(xhsNoteId) : '',
       XhsUserId: xhsUserId,
       BloggerId: bloggerId,
       BloggerIdKey: matchBlogger === 'new' && xhsUserId ? idKey(xhsUserId) : '',
-      BrandId: brand?.BrandId || '',
-      BrandIdKey: brand?.BrandIdKey || '',
-      BrandName: brand?.BrandName || '',
+      BrandId: brand?.BrandId || (isNewBrand ? '(待创建)' : ''),
+      BrandIdKey: brand?.BrandIdKey || (isNewBrand ? '(待创建)' : ''),
+      BrandName: brandNameRaw,
       huitun_brand_name: brandNameRaw,
+      huitun_brand_mapped: brandNameMapped,
       CooperateBindsName: brandNameRaw,
-      CooperateBindList: brand ? buildCooperateBindList(brand) : '',
+      CooperateBindList: brand ? buildCooperateBindList(brand, brandNameRaw) : '',
       Title: xlsNote?.['标题'] || csv['笔记标题'] || '',
       XhsTitle: xlsNote?.['标题'] || csv['笔记标题'] || '',
       XhsContent: xlsNote?.['内容'] || '',
       CoverImage: csv['笔记封面'] || xlsNote?.['封面图'] || '',
-      XhsImages: xlsNote?.['图片列表'] || '',
+      XhsImages: xlsNote?.['rawImageList'] || '',
       XhsVideo: xlsNote?.['视频链接'] || '',
-      XhsNoteLink: csv['链接地址'] || xlsNote?.['笔记链接'] || '',
+      XhsNoteLink: xlsNote?.['笔记链接'] || csv['链接地址'] || '',
       NoteType: noteType,
       IsBusiness: yesNo(csv['商业笔记']),
       IsAdNote: yesNo(csv['是否参与付费推广']),
@@ -474,7 +689,6 @@ async function main() {
       LinkInfo: csv['联系方式'] && csv['联系方式'] !== '--' ? csv['联系方式'] : '',
       SmallAvatar: xlsNote?.['博主头像'] || '',
       DataSource: '灰豚',
-      source_csv: csv._sourceCsv,
       xls_joined: xlsNote ? 'yes' : 'no',
     };
 
@@ -484,16 +698,18 @@ async function main() {
   // 汇总 sheet
   const summaryRows = [
     { metric: '灰豚 CSV 总行数', value: stats.total },
-    { metric: '待入库 insert', value: stats.insert },
-    { metric: '跳过 skip', value: stats.skip },
-    { metric: '剔除子线（美妆/香氛）', value: stats.excludedSubBrand },
-    { metric: '品牌未映射 skip', value: stats.brandUnmapped },
-    { metric: '缺 XLS 笔记行', value: stats.missingXlsNote },
-    { metric: '缺 XhsUserId', value: stats.missingXhsUserId },
+    { metric: '待入库 insert（合计）', value: stats.insert },
+    { metric: '  其中：新品牌笔记（需先创建品牌）', value: stats.insertNewBrand },
+    { metric: '跳过 skip（合计）', value: stats.skip },
+    { metric: '  剔除子线/非品牌', value: stats.excludedBrand },
+    { metric: '  缺 XLS 详情', value: stats.missingXlsNote - (stats.excludedBrand > 0 ? 0 : 0) },
+    { metric: '  品牌未映射', value: stats.brandUnmapped },
     { metric: 'insert 中新博主', value: stats.newBloggers },
     { metric: 'insert 中命中博主', value: stats.hitBloggers },
     { metric: 'DB 品牌数', value: db.brandCount },
-    { metric: 'DB 笔记数', value: db.noteCount },
+    { metric: 'DB 笔记数（已有）', value: db.noteCount },
+    { metric: '本批新品牌', value: [...NEW_BRAND_NAMES].join(' | ') },
+    { metric: 'alias 映射', value: Object.entries(BRAND_ALIAS).map(([k, v]) => `${k} → ${v}`).join(' | ') },
     { metric: '未映射品牌名', value: [...brandUnmappedNames].join(' | ') || '(无)' },
   ];
 
@@ -508,18 +724,29 @@ async function main() {
   const skipOnly = staging.filter((r) => r.import_action === 'skip');
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(skipOnly), '跳过明细');
 
-  const unmappedBrandRows = [...brandUnmappedNames].sort().map((name) => {
-    const cnt = staging.filter((r) => r.huitun_brand_name === name).length;
-    const suggestions = [...db.brandByName.keys()]
-      .filter((bn) => bn.includes(name.slice(0, 4)) || name.includes(bn.slice(0, 4)))
-      .slice(0, 5);
+  // 新品牌汇总 sheet
+  const newBrandRows = [...NEW_BRAND_NAMES].sort().map((name) => {
+    const cnt = staging.filter((r) => r.huitun_brand_mapped === name && r.import_action === 'insert').length;
     return {
-      huitun_brand_name: name,
-      row_count: cnt,
-      db_suggestions: suggestions.join(' | ') || '(无相近名称，需在 qiangua_brand 新建或配置 alias)',
+      BrandName: name,
+      insert_count: cnt,
+      note: '阶段B第1步需先在 qiangua_brand 创建此品牌',
     };
   });
-  if (unmappedBrandRows.length) {
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(newBrandRows), '待创建品牌');
+
+  if (brandUnmappedNames.size) {
+    const unmappedBrandRows = [...brandUnmappedNames].sort().map((name) => {
+      const cnt = staging.filter((r) => r.huitun_brand_name === name).length;
+      const suggestions = [...db.brandByName.keys()]
+        .filter((bn) => bn.includes(name.slice(0, 4)) || name.includes(bn.slice(0, 4)))
+        .slice(0, 5);
+      return {
+        huitun_brand_name: name,
+        row_count: cnt,
+        db_suggestions: suggestions.join(' | ') || '(无相近名称)',
+      };
+    });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(unmappedBrandRows), '品牌未映射');
   }
 
@@ -531,11 +758,13 @@ async function main() {
   );
 
   console.log('\n=== 汇总完成 ===');
-  console.log(`  总条数: ${stats.total}`);
-  console.log(`  待入库: ${stats.insert}`);
-  console.log(`  跳过:   ${stats.skip}`);
-  console.log(`  剔除美妆/香氛: ${stats.excludedSubBrand}`);
-  console.log(`  品牌未映射: ${stats.brandUnmapped}`);
+  console.log(`  总条数:       ${stats.total}`);
+  console.log(`  待入库:       ${stats.insert}（其中新品牌笔记 ${stats.insertNewBrand} 条）`);
+  console.log(`  跳过:         ${stats.skip}`);
+  console.log(`    剔除子线/非品牌: ${stats.excludedBrand}`);
+  console.log(`    缺XLS详情:       ${stats.missingXlsNote}`);
+  console.log(`    品牌未映射:      ${stats.brandUnmapped}`);
+  console.log(`  新博主: ${stats.newBloggers}，命中博主: ${stats.hitBloggers}`);
   if (brandUnmappedNames.size) {
     console.log(`  未映射品牌: ${[...brandUnmappedNames].join(', ')}`);
   }
