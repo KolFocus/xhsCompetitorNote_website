@@ -7,7 +7,7 @@ import type { AiStats, SystemConfig } from '../types';
 export function useAiConfig() {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState<AiStats | null>(null);
-  const [aiModel, setAiModel] = useState<string>('gemini-2.5-flash');
+  const [aiModel, setAiModel] = useState<string>('gemini-3.5-flash');
   const [aiProvider, setAiProvider] = useState<string>('chatai');
   const [openrouterApiKey, setOpenrouterApiKey] = useState<string>('');
   const [aiEnabled, setAiEnabled] = useState<boolean>(true);

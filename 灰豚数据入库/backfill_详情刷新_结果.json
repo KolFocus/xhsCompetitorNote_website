@@ -1,0 +1,21 @@
+{
+  "mode": "dry-run",
+  "at": "2026-11-27T03:22:18.530Z",
+  "file": "小红书笔记数据_Max-Y26-11复盘竞品笔记_2026-11-26_14-15-52.xlsx",
+  "xlsCount": 1386,
+  "dbHit": 1386,
+  "planned": 1386,
+  "unchanged": 0,
+  "missing": 0,
+  "fieldCounts": {
+    "XhsImages": 1385,
+    "CoverImage": 1386,
+    "XhsNoteLink": 0,
+    "XhsContent": 0,
+    "XhsVideo": 0,
+    "XhsTitle": 0
+  },
+  "updated": 0,
+  "failed": 0,
+  "errors": []
+}

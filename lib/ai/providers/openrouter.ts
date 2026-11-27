@@ -16,7 +16,7 @@ import { log } from '@/lib/logger';
 /**
  * 执行 OpenRouter 分析
  * @param note 笔记记录
- * @param model 模型名称（gemini-2.0-flash / gemini-2.5-flash / gemini-2.5-pro）
+ * @param model 模型名称（gemini-2.0-flash / gemini-2.5-flash / gemini-2.5-pro / gemini-3.5-flash）
  * @returns 分析结果和响应文本
  */
 export const executeOpenRouterAnalysis = async (
@@ -126,6 +126,7 @@ function convertToOpenRouterModel(model: string): string {
     'gemini-2.0-flash': 'google/gemini-2.0-flash',
     'gemini-2.5-flash': 'google/gemini-2.5-flash',
     'gemini-2.5-pro': 'google/gemini-2.5-pro',
+    'gemini-3.5-flash': 'google/gemini-3.5-flash',
   };
 
   // 如果已经是 google/ 开头的格式，直接返回
@@ -136,8 +137,8 @@ function convertToOpenRouterModel(model: string): string {
   // 转换为 OpenRouter 格式
   const converted = modelMap[model];
   if (!converted) {
-    console.warn(`未知的模型名称: ${model}, 使用默认模型 google/gemini-2.5-flash`);
-    return 'google/gemini-2.5-flash';
+    console.warn(`未知的模型名称: ${model}, 使用默认模型 google/gemini-3.5-flash`);
+    return 'google/gemini-3.5-flash';
   }
 
   return converted;

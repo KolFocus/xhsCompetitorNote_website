@@ -259,7 +259,7 @@ function loadCsvRows() {
 
 /**
  * 将「小红书博文」英文表头行规范为旧版「笔记」Sheet 中文列名，供下游统一读取。
- * 图片只取 raw_image_list → rawImageList，不用 image_list 回退。
+ * CoverImage ← 封面图；XhsImages ← 图片列表（灰豚 OSS）。
  */
 function normalizeBowenRow(row) {
   return {
@@ -270,6 +270,7 @@ function normalizeBowenRow(row) {
     笔记链接: row.note_url || row['笔记链接'] || '',
     视频链接: row.video_url || row['视频链接'] || '',
     封面图: row.cover_image || row['封面图'] || '',
+    图片列表: row.image_list || row['图片列表'] || '',
     rawImageList: row.raw_image_list || row.rawImageList || '',
     博主昵称: row.nickname || row['博主昵称'] || '',
     博主头像: row.avatar || row['博主头像'] || '',
@@ -666,8 +667,8 @@ async function main() {
       Title: xlsNote?.['标题'] || csv['笔记标题'] || '',
       XhsTitle: xlsNote?.['标题'] || csv['笔记标题'] || '',
       XhsContent: xlsNote?.['内容'] || '',
-      CoverImage: csv['笔记封面'] || xlsNote?.['封面图'] || '',
-      XhsImages: xlsNote?.['rawImageList'] || '',
+      CoverImage: xlsNote?.['封面图'] || csv['笔记封面'] || '',
+      XhsImages: xlsNote?.['图片列表'] || '',
       XhsVideo: xlsNote?.['视频链接'] || '',
       XhsNoteLink: xlsNote?.['笔记链接'] || csv['链接地址'] || '',
       NoteType: noteType,

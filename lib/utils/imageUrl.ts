@@ -74,8 +74,19 @@ export function normalizeImageUrl(raw: string): string {
   return parsed.toString();
 }
 
+/** 灰豚等自有 OSS，可直链，无需 xhstool 中转 */
+function isDirectOssUrl(url: string): boolean {
+  try {
+    const { hostname } = new URL(ensureHttpsProtocol(url));
+    return hostname.endsWith('.aliyuncs.com');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 获取经 xhstool 代理、且已规范化的图片 URL
+ * OSS（*.aliyuncs.com）直接返回原地址，不走中转
  */
 export function getProxiedImageUrl(
   url: string | null | undefined
@@ -84,5 +95,7 @@ export function getProxiedImageUrl(
   if (url.includes('xhstool.cc/api/proxy')) return url;
 
   const normalized = normalizeImageUrl(url);
+  if (isDirectOssUrl(normalized)) return normalized;
+
   return `${PROXY_BASE_URL}?url=${encodeURIComponent(normalized)}`;
 }

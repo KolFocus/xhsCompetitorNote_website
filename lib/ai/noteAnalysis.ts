@@ -7,7 +7,7 @@ import { fixImageUrl } from '@/lib/utils/dataTransform';
 
 // AI 配置常量
 export const AI_API_URL = 'https://api.viviai.cc/v1/chat/completions';
-export const AI_API_TOKEN = 'sk-ujhc2cmJnoWay1tuRAZrigFm5LTpiRJCMcDP9P9n3I8fWM9M';
+export const AI_API_TOKEN = 'sk-rFIgPOk3rIIaVoQON8CyMrvoaomiw0W90953o8BZNBSEjU2q';
 export const AI_MODEL_DEFAULT = 'gemini-3.5-flash'; // 默认模型
 
 

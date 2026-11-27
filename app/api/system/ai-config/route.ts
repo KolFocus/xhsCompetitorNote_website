@@ -80,7 +80,12 @@ export async function POST(request: NextRequest) {
 
     // 验证 AI 模型值
     if (config_key === CONFIG_KEYS.AI_MODEL) {
-      const allowedModels = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+      const allowedModels = [
+        'gemini-2.0-flash',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-3.5-flash',
+      ];
       if (!allowedModels.includes(config_value)) {
         return NextResponse.json(
           {

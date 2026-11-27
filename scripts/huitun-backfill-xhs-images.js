@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 从灰豚笔记详情 XLSX 回填 qiangua_note_info.XhsImages（rawImageList → XHS CDN）
+ * 从灰豚笔记详情 XLSX 回填 qiangua_note_info.XhsImages（图片列表 → 灰豚 OSS）
  *
  * 用法：
  *   node scripts/huitun-backfill-xhs-images.js           # dry-run
@@ -59,7 +59,7 @@ function loadRawImageMap() {
     const notes = XLSX.utils.sheet_to_json(wb.Sheets['笔记'], { defval: '' });
     for (const n of notes) {
       const id = String(n['笔记ID'] || '').toLowerCase();
-      const images = String(n.rawImageList || '').trim();
+      const images = String(n['图片列表'] || '').trim();
       if (id && !map.has(id)) map.set(id, images);
     }
   }
@@ -110,7 +110,7 @@ async function main() {
   for (const noteId of insertNoteIds) {
     const images = rawImageMap.get(noteId);
     if (!images) {
-      skipped.push({ noteId, reason: '新 XLSX 无 rawImageList' });
+      skipped.push({ noteId, reason: '新 XLSX 无图片列表' });
       continue;
     }
     toUpdate.push({ noteId, images, urlCount: (images.match(/https?:\/\//g) || []).length });
@@ -118,7 +118,7 @@ async function main() {
 
   console.log(`模式: ${execute ? '正式更新 (--execute)' : 'dry-run'}`);
   console.log(`staging insert 笔记: ${insertNoteIds.length}`);
-  console.log(`新 XLSX rawImageList: ${rawImageMap.size} 条`);
+  console.log(`新 XLSX 图片列表: ${rawImageMap.size} 条`);
   console.log(`待 PATCH: ${toUpdate.length}，跳过: ${skipped.length}`);
 
   if (toUpdate.length) {

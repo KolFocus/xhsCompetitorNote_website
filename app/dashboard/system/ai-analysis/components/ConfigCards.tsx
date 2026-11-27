@@ -106,8 +106,9 @@ export function ConfigCards({
         <Radio.Group value={aiModel} onChange={onModelChange}>
           <Space direction="vertical">
             <Radio value="gemini-2.0-flash">gemini-2.0-flash</Radio>
-            <Radio value="gemini-2.5-flash">gemini-2.5-flash (推荐)</Radio>
+            <Radio value="gemini-2.5-flash">gemini-2.5-flash</Radio>
             <Radio value="gemini-2.5-pro">gemini-2.5-pro</Radio>
+            <Radio value="gemini-3.5-flash">gemini-3.5-flash (推荐)</Radio>
           </Space>
         </Radio.Group>
       </Card>
