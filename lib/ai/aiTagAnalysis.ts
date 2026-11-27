@@ -8,7 +8,7 @@ import { log } from '@/lib/logger';
 import { getServiceSupabaseClient } from '@/lib/supabase/admin';
 
 import type { NoteRecord } from './noteAnalysis';
-import { getAiModel, getAiProvider } from './noteAnalysis';
+import { getAiModel, getAiProvider, sanitizeJsonStringLiterals } from './noteAnalysis';
 
 export interface TagSetInfoForAiTag {
   tagSetName: string;
@@ -131,6 +131,11 @@ export function buildAiTagPrompt(
     '请严格遵循以下输出格式，**不要添加任何其他字段**，必须只包含 `aiTag` 这1个字段。',
     '你**只**输出给我下面格式的数据。所有输出内容必须是一个**合法**的JSON对象，并使用 `^DT^` 进行包裹，方便后续进行程序化解析。',
     '',
+    '**格式硬性要求（必须遵守）：**',
+    '1. 包裹标记必须是连续的四个字符 `^DT^`，中间**禁止**空格或换行。',
+    '2. JSON 的 **字符串值内部禁止换行**；`aiTag` 必须写在同一行内。',
+    '3. 输出必须是可被标准 JSON.parse 解析的合法 JSON。',
+    '',
     '**输出格式示例 1（符合类目，且为复合内容类型）：**',
     '^DT^',
     '{"aiTag": "类目：' +
@@ -154,19 +159,28 @@ export function parseAiTagResponse(content: string): string {
     throw new Error('AI 响应为空');
   }
 
-  const match = trimmed.match(/\^DT\^[\s\S]*?\^DT\^/);
+  // 允许 ^DT^ / ^DT ^ 等标记内空格（模型偶发插入）
+  const match = trimmed.match(/\^DT\s*\^([\s\S]*?)\^DT\s*\^/);
   if (!match) {
     throw new Error('AI 响应未包含 ^DT^ 包裹的 JSON：' + trimmed.slice(0, 200));
   }
 
-  let jsonPayload = match[0].replace(/\^DT\^/g, '').trim();
+  let jsonPayload = match[0].replace(/\^DT\s*\^/g, '').trim();
   jsonPayload = jsonPayload.replace(/^```json\s*/i, '').replace(/\s*```$/g, '').trim();
+  jsonPayload = sanitizeJsonStringLiterals(jsonPayload);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonPayload);
   } catch (e) {
-    throw new Error('AI 响应 JSON 解析失败: ' + (e as Error).message);
+    throw new Error(
+      'AI 响应 JSON 解析失败: ' +
+        (e as Error).message +
+        '\n原始响应: ' +
+        JSON.stringify(trimmed) +
+        '\n提取的JSON: ' +
+        JSON.stringify(jsonPayload),
+    );
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
